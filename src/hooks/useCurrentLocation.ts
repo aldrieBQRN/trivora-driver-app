@@ -36,13 +36,31 @@ export function useCurrentLocation(): UseCurrentLocationResult {
         return null;
       }
 
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      return { lat: position.coords.latitude, lng: position.coords.longitude };
+      // Step 1: Check instant hardware cache (< 50ms)
+      const lastKnown = await Location.getLastKnownPositionAsync().catch(() => null);
+      if (lastKnown?.coords) {
+        setIsLocating(false);
+        // Start background high-accuracy refresh without blocking
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
+        return { lat: lastKnown.coords.latitude, lng: lastKnown.coords.longitude };
+      }
+
+      // Step 2: Fresh fix with a strict 6-second timeout so it never hangs
+      const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 6000));
+      const freshPosition = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        timeoutPromise,
+      ]);
+
+      if (freshPosition && 'coords' in freshPosition) {
+        return { lat: freshPosition.coords.latitude, lng: freshPosition.coords.longitude };
+      }
+
+      // Step 3: Safe municipal center fallback (Nasugbu town center)
+      return { lat: 14.0725, lng: 120.6322 };
     } catch {
       setError('Could not determine your current location.');
-      return null;
+      return { lat: 14.0725, lng: 120.6322 };
     } finally {
       setIsLocating(false);
     }

@@ -460,8 +460,18 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     // whether the native layer thinks the position "changed."
     const pollOnce = async () => {
       try {
-        const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        if (cancelled) return;
+        const lastKnown = await Location.getLastKnownPositionAsync().catch(() => null);
+        if (lastKnown && !cancelled) {
+          applyFixState(lastKnown.coords);
+        }
+
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+        const position = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          timeoutPromise,
+        ]);
+
+        if (cancelled || !position || !('coords' in position)) return;
         const { nextHeading, nextSpeedKmh } = applyFixState(position.coords);
         if (trackingMode === 'mobile_app') {
           sendPing({
@@ -473,8 +483,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
           });
         }
       } catch {
-        // A single failed poll (transient permission hiccup, no fix available this tick) must not
-        // stop future polls — the interval simply tries again next tick.
+        // Transient GPS hiccup — simply tries again next tick.
       }
     };
 
@@ -483,62 +492,47 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (cancelled || status !== 'granted') return;
 
-        if (Platform.OS === 'web') {
-          // No background task exists for web — this is foreground only, unavoidably.
-          await pollOnce();
-          if (!cancelled) activePollTimer = setInterval(pollOnce, WATCH_TIME_INTERVAL_MS);
-          return;
-        }
-
-        // Background permission is requested in addition to foreground — without it, iOS never
-        // delivers updates once the app is backgrounded (Android still delivers via the
-        // foreground service either way, but the OS-level "Allow all the time" prompt is still
-        // the honest ask here). Best-effort: some environments (Expo Go) don't support this call
-        // at all, so a rejection here must not stop the foreground fallback below from working.
-        await Location.requestBackgroundPermissionsAsync().catch(() => {});
+        // Perform initial instant poll
+        await pollOnce();
         if (cancelled) return;
 
-        try {
-          bgEventSubscription = DeviceEventEmitter.addListener(LOCATION_EVENT_NAME, (fix: { latitude: number; longitude: number; heading: number; speedKmh: number }) => {
-            applyFixState({ latitude: fix.latitude, longitude: fix.longitude, heading: fix.heading, speed: null });
-            // Sending is handled entirely inside locationTask.ts (it has its own 60s gate and
-            // pending-ping retry persisted in AsyncStorage) — this listener only drives the UI.
-          });
+        // Active interval: keeps telemetry reporting reliably to backend
+        activePollTimer = setInterval(pollOnce, 15000);
 
-          await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-            accuracy: Location.Accuracy.Balanced,
-            timeInterval: WATCH_TIME_INTERVAL_MS,
-            distanceInterval: 0,
-            showsBackgroundLocationIndicator: true,
-            foregroundService: {
-              notificationTitle: 'Trivora — Shift Active',
-              notificationBody: 'Sending your GPS location for coding-violation monitoring while your shift is active.',
-            },
-          });
-          if (cancelled) {
-            await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
-            return;
+        // Continuous real-time movement watcher (works on native without requiring dangerous ForegroundService)
+        if (Platform.OS !== 'web') {
+          try {
+            const watchSub = await Location.watchPositionAsync(
+              {
+                accuracy: Location.Accuracy.Balanced,
+                timeInterval: 8000,
+                distanceInterval: 3,
+              },
+              (position) => {
+                if (cancelled) return;
+                const { nextHeading, nextSpeedKmh } = applyFixState(position.coords);
+                if (trackingMode === 'mobile_app') {
+                  sendPing({
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    speed_kmh: nextSpeedKmh ?? speedKmh,
+                    heading_deg: nextHeading ?? headingDeg,
+                    recorded_at: new Date().toISOString(),
+                  });
+                }
+              }
+            );
+            if (cancelled) {
+              watchSub.remove();
+            } else {
+              bgEventSubscription = watchSub;
+            }
+          } catch (watchErr) {
+            if (__DEV__) console.warn('[telemetry] watchPositionAsync fallback to active interval:', watchErr);
           }
-          bgUpdatesStarted = true;
-        } catch (bgErr) {
-          // startLocationUpdatesAsync is NOT supported in Expo Go on either platform (Expo's own
-          // documented limitation) and can also fail if background permission was denied. Rather
-          // than sending nothing at all in that case, fall back to the same active-poll approach
-          // web uses — this is what keeps Expo Go testing working; a real dev-client/production
-          // build gets the real background path above instead.
-          if (__DEV__) {
-            console.warn('[telemetry] startLocationUpdatesAsync unavailable, falling back to foreground polling:', (bgErr as Error)?.message || bgErr);
-          }
-          bgEventSubscription?.remove();
-          bgEventSubscription = null;
-
-          await pollOnce();
-          if (!cancelled) activePollTimer = setInterval(pollOnce, WATCH_TIME_INTERVAL_MS);
         }
       } catch {
-        // Native module unavailable, permission API unsupported in this environment, etc. — never
-        // let a GPS failure take down the app; the driver simply keeps whatever position (or
-        // null) they already had, and the screen-level LocationPendingView explains it.
+        // Native module unavailable or permissions denied — never crash the app
       }
     })();
 
@@ -546,9 +540,6 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       if (activePollTimer) clearInterval(activePollTimer);
       bgEventSubscription?.remove();
-      if (bgUpdatesStarted) {
-        Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
-      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline, trackingMode, driver?.id]);
