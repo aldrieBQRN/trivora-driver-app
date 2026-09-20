@@ -16,7 +16,7 @@ const REFRAME_THRESHOLD_KM = 0.12;
 const EDGE_MARGIN = 40;
 
 const CARTO_URL_TEMPLATE =
-  'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_3qo7_1_ac41fdc9883213d666d06544';
+  'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
 
 // Identical to the Passenger app's CARTO Voyager style — same map "skin" across the ecosystem.
 const VOYAGER_MAP_STYLE = [
@@ -180,7 +180,7 @@ export default function TrivoraDriverMapNative({
           flipY={false}
           tileSize={256}
           shouldReplaceMapContent={true}
-          zIndex={-1}
+          zIndex={1}
         />
         {/* Live broadcast radius — visible only while online, communicating "the dispatch
             system can see me" spatially rather than as a separate text label. */}
@@ -204,6 +204,7 @@ export default function TrivoraDriverMapNative({
         )}
 
         <Marker
+          zIndex={10}
           coordinate={{ latitude: driverLocation.lat, longitude: driverLocation.lng }}
           anchor={{ x: 0.5, y: 0.5 }}
           rotation={driverLocation.heading}
@@ -218,7 +219,7 @@ export default function TrivoraDriverMapNative({
         </Marker>
 
         {target && (
-          <Marker coordinate={{ latitude: target.lat, longitude: target.lng }} anchor={{ x: 0.5, y: 0.5 }}>
+          <Marker zIndex={10} coordinate={{ latitude: target.lat, longitude: target.lng }} anchor={{ x: 0.5, y: 0.5 }}>
             {target.kind === 'pickup' ? (
               <View style={styles.pickupPin} />
             ) : (
