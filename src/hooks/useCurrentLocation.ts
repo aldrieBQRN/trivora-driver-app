@@ -40,8 +40,6 @@ export function useCurrentLocation(): UseCurrentLocationResult {
       const lastKnown = await Location.getLastKnownPositionAsync().catch(() => null);
       if (lastKnown?.coords) {
         setIsLocating(false);
-        // Start background high-accuracy refresh without blocking
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }).catch(() => null);
         return { lat: lastKnown.coords.latitude, lng: lastKnown.coords.longitude };
       }
 

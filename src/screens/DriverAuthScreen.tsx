@@ -13,7 +13,7 @@ import {
 import { COLORS, RADIUS, SHADOWS, SPACING, BUTTONS, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useNetwork } from '../context/NetworkContext';
-import { driverApi, mapAuthResponseToDriverProfile } from '../services/api';
+import { driverApi, mapAuthResponseToDriverProfile, getApiBaseUrl } from '../services/api';
 import { DriverProfile } from '../types';
 import { Mail, Lock, Eye, EyeOff, Check } from 'lucide-react-native';
 import { GoogleIcon, TricycleIcon } from '../components/icons';
@@ -88,21 +88,30 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
 
     setLoading(true);
     try {
-      const res = await driverApi.login(email.trim(), password);
+      let res;
+      try {
+        res = await driverApi.login(email.trim(), password);
+      } catch (firstErr: any) {
+        if (firstErr?.status !== undefined) {
+          throw firstErr;
+        }
+        // Brief pause and auto-retry once in case of mobile network handshake delay
+        await new Promise((r) => setTimeout(r, 1500));
+        res = await driverApi.login(email.trim(), password);
+      }
       login(mapAuthResponseToDriverProfile(res, email.trim()), res.token);
     } catch (err: any) {
       if (err?.status !== undefined) {
-        // The backend was reached and rejected the credentials — a real failure, not a
-        // connectivity issue. Show it instead of silently logging the driver in anyway.
+        // The backend was reached and rejected the credentials
         setErrors({ form: err.message || 'Incorrect email or password. Please try again.' });
         return;
       }
       // Backend unreachable or offline — alert user with retry or demo mode option
       Alert.alert(
         'Cloud Server Unreachable',
-        'Unable to reach the Trivora cloud server. Please check your internet connection.\n\nWould you like to continue in Offline Demo Mode for testing?',
+        `Unable to connect to the Trivora cloud backend.\n\nDetails: ${err?.message || 'Network Timeout'}\nServer: ${getApiBaseUrl()}\n\nPlease verify your phone has an active internet connection and tap Retry.`,
         [
-          { text: 'Check Connection / Retry', onPress: () => checkConnection(), style: 'cancel' },
+          { text: 'Retry', onPress: () => handleLogin() },
           {
             text: 'Continue in Demo Mode',
             onPress: () => {

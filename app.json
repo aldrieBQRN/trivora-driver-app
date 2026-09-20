@@ -27,6 +27,11 @@
         "backgroundColor": "#0F1E36"
       },
       "package": "ph.gov.trivora.driver",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDummyKeyForTrivoraOsmCartoTiles"
+        }
+      },
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",

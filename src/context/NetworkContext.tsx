@@ -24,6 +24,7 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
   const [isConnected, setIsConnected] = useState<boolean>(true);
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const isCheckingRef = useRef<boolean>(false);
+  const failCountRef = useRef<number>(0);
 
   const checkConnection = useCallback(async (): Promise<boolean> => {
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -36,31 +37,52 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
     setIsChecking(true);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      // 1. First test Render backend directly with an 8s timeout
+      const backendController = new AbortController();
+      const backendTimer = setTimeout(() => backendController.abort(), 8000);
 
-      // Fast ping against the backend public endpoint or fallback
-      const pingUrl = `${getApiBaseUrl()}/toda-zones`;
-      const res = await fetch(pingUrl, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        signal: controller.signal,
-      }).catch(async () => {
-        return await fetch('https://www.google.com/generate_204', {
-          method: 'HEAD',
-          signal: controller.signal,
-          mode: 'no-cors',
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/toda-zones`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: backendController.signal,
         });
-      });
+        clearTimeout(backendTimer);
+        if (res && res.status < 500) {
+          failCountRef.current = 0;
+          setIsConnected(true);
+          return true;
+        }
+      } catch {
+        clearTimeout(backendTimer);
+      }
 
-      clearTimeout(timeoutId);
+      // 2. Fallback: test public internet via google.com with a fresh controller
+      const publicController = new AbortController();
+      const publicTimer = setTimeout(() => publicController.abort(), 5000);
 
-      const online = !!res;
-      setIsConnected(online);
-      return online;
-    } catch {
-      setIsConnected(false);
-      return false;
+      try {
+        const ping = await fetch('https://www.google.com', {
+          method: 'GET',
+          signal: publicController.signal,
+        });
+        clearTimeout(publicTimer);
+        if (ping) {
+          failCountRef.current = 0;
+          setIsConnected(true);
+          return true;
+        }
+      } catch {
+        clearTimeout(publicTimer);
+      }
+
+      // Only mark disconnected after 2 consecutive failures to avoid spurious blips
+      failCountRef.current += 1;
+      if (failCountRef.current >= 2) {
+        setIsConnected(false);
+        return false;
+      }
+      return true;
     } finally {
       isCheckingRef.current = false;
       setIsChecking(false);
@@ -68,12 +90,14 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
   }, [isConnected]);
 
   useEffect(() => {
-    // Initial connectivity check on mount
-    checkConnection();
+    // Initial check after a short 1.5s grace period on mount
+    const initialTimer = setTimeout(() => {
+      checkConnection();
+    }, 1500);
 
-    // Listen to Web online/offline events if on web
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const handleOnline = () => {
+        failCountRef.current = 0;
         setIsConnected(true);
         checkConnection();
       };
@@ -85,24 +109,24 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
       window.addEventListener('offline', handleOffline);
 
       return () => {
+        clearTimeout(initialTimer);
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
       };
     }
 
-    // Listen to AppState (when app comes back from background to active foreground)
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
         checkConnection();
       }
     });
 
-    // Heartbeat check every 25 seconds
     const interval = setInterval(() => {
       checkConnection();
-    }, 25000);
+    }, 30000);
 
     return () => {
+      clearTimeout(initialTimer);
       subscription.remove();
       clearInterval(interval);
     };

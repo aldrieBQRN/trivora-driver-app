@@ -157,20 +157,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       // with the same safe `true` default, for the same reason — nothing could have been orphaned
       // before this app has ever gone online once.
 
-      if (Platform.OS === 'web') return;
-      try {
-        const isTracking = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
-        if (isTracking && !restoredOnline) {
-          await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
-          if (__DEV__) {
-            console.warn('[telemetry] Stopped an orphaned background location task from a previous session (app was likely force-quit while still online).');
-          }
-        }
-      } catch {
-        // hasStartedLocationUpdatesAsync/stopLocationUpdatesAsync aren't available in every
-        // environment (e.g. Expo Go never has a real task registered to begin with) — nothing to
-        // reconcile in that case, and this must never crash app startup either way.
-      }
+      // Pure foreground tracking with watchPositionAsync & interval polling — no background TaskManager required.
     })();
     // Runs once per app process start — deliberately not re-run on driver/login changes, since an
     // orphaned task is a device-level leftover, not something tied to whichever driver is
