@@ -3,21 +3,15 @@ import Constants from 'expo-constants';
 import { DriverProfile, IncomingBooking, ViolationCitation } from '../types';
 
 function getDefaultApiBaseUrl(): string {
+  // Explicit override (Render cloud host or ngrok tunnel) takes top priority across all platforms including Web
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
   // Web runs on the local machine where Laravel is on port 8000; connect directly
   // rather than routing through an external tunnel or LAN IP heuristic.
   if (Platform.OS === 'web') {
     return 'http://localhost:8000/api/v1';
-  }
-
-  // Explicit override, e.g. a separate `ngrok http 8000` URL — required when running
-  // `expo start --tunnel`, since Expo's own tunnel only proxies the Metro bundler's traffic and
-  // has no relationship to Laravel's port 8000 whatsoever. In that mode, Constants.expoConfig
-  // .hostUri below holds an Expo/ngrok tunnel hostname (e.g. "xxxxx.19000.exp.direct"), not the
-  // dev machine's LAN IP, so the LAN-IP heuristic that follows cannot produce a reachable URL —
-  // set EXPO_PUBLIC_API_URL in this project's .env when using --tunnel. Inlined at build time by
-  // babel-preset-expo; unset by default, so normal LAN-mode `expo start` is unaffected.
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
   }
 
   // In Expo Go on physical device connected via LAN (not --tunnel), hostUri holds the
