@@ -24,6 +24,7 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F1E36"
       },
       "package": "ph.gov.trivora.driver",

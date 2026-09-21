@@ -16,7 +16,7 @@ const REFRAME_THRESHOLD_KM = 0.12;
 const EDGE_MARGIN = 40;
 
 const CARTO_URL_TEMPLATE =
-  'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
+  'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_3qo7_1_ac41fdc9883213d666d06544';
 
 // Identical to the Passenger app's CARTO Voyager style — same map "skin" across the ecosystem.
 const VOYAGER_MAP_STYLE = [
