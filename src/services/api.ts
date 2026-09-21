@@ -5,7 +5,7 @@ import { DriverProfile, IncomingBooking, ViolationCitation } from '../types';
 function getDefaultApiBaseUrl(): string {
   // Explicit override (Render cloud host or ngrok tunnel) takes top priority across all platforms including Web
   if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
+    return process.env.EXPO_PUBLIC_API_URL.trim().replace(/\/+$/, '');
   }
 
   // Web runs on the local machine where Laravel is on port 8000; connect directly
