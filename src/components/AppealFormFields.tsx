@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
-import { Camera, ImagePlus, XCircle, AlertCircle } from 'lucide-react-native';
+import { Camera, XCircle, AlertCircle } from 'lucide-react-native';
 import Button from './Button';
 
 export interface ProofPhoto {
@@ -18,10 +18,11 @@ interface AppealFormFieldsProps {
 const MIN_REASON_LENGTH = 10;
 
 /**
- * The interactive appeal controls — reason input + optional evidence photo (device library or
- * camera) — meant to be embedded directly inside ViolationDetailModal's own scroll content, not
- * presented as a separate modal. No outer Modal/header/violation-reference chrome here; the
- * violation itself is already fully visible above wherever this is rendered.
+ * The interactive appeal controls — reason input + optional evidence photo taken with the device
+ * camera (gallery/file selection is deliberately unavailable) — embedded directly inside
+ * ViolationDetailModal's own scroll content, not presented as a separate modal. No outer
+ * Modal/header/violation-reference chrome here; the violation itself is already fully visible
+ * above wherever this is rendered.
  */
 export default function AppealFormFields({ onSubmit }: AppealFormFieldsProps) {
   const [reason, setReason] = useState('');
@@ -37,31 +38,14 @@ export default function AppealFormFields({ onSubmit }: AppealFormFieldsProps) {
     });
   };
 
-  const handleUploadPhoto = async () => {
-    setError(null);
-    try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        setError('Photo library access is needed to attach an evidence photo.');
-        return;
-      }
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.7,
-      });
-      if (result.canceled) return;
-      applyAsset(result.assets[0]);
-    } catch {
-      setError('Could not open your photo library. Please try again.');
-    }
-  };
-
   const handleTakePhoto = async () => {
     setError(null);
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        setError('Camera access is needed to take an evidence photo.');
+        setError(
+          "Camera access is needed to take an evidence photo. Enable camera permission for Trivora in your phone's Settings, then try again."
+        );
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
@@ -70,7 +54,7 @@ export default function AppealFormFields({ onSubmit }: AppealFormFieldsProps) {
       if (result.canceled) return;
       applyAsset(result.assets[0]);
     } catch {
-      setError('Could not open the camera. Please try again, or choose from gallery instead.');
+      setError('Could not open the camera. Please try again.');
     }
   };
 
@@ -125,9 +109,9 @@ export default function AppealFormFields({ onSubmit }: AppealFormFieldsProps) {
         <View style={styles.photoPreviewBox}>
           <Image source={{ uri: photo.uri }} style={styles.photoPreview} />
           <View style={styles.photoActionsRow}>
-            <TouchableOpacity style={styles.photoActionBtn} onPress={handleUploadPhoto} activeOpacity={0.7} disabled={isSubmitting}>
-              <ImagePlus size={13} color={COLORS.primary} />
-              <Text style={styles.photoActionText}>Replace</Text>
+            <TouchableOpacity style={styles.photoActionBtn} onPress={handleTakePhoto} activeOpacity={0.7} disabled={isSubmitting}>
+              <Camera size={13} color={COLORS.primary} />
+              <Text style={styles.photoActionText}>Retake</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.photoActionBtn} onPress={() => setPhoto(null)} activeOpacity={0.7} disabled={isSubmitting}>
               <XCircle size={13} color={COLORS.dangerDark} />
@@ -141,10 +125,6 @@ export default function AppealFormFields({ onSubmit }: AppealFormFieldsProps) {
           <TouchableOpacity style={styles.photoPickerBtn} onPress={handleTakePhoto} activeOpacity={0.7} disabled={isSubmitting}>
             <Camera size={15} color={COLORS.primary} />
             <Text style={styles.photoPickerText}>Take Photo</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.photoPickerBtn} onPress={handleUploadPhoto} activeOpacity={0.7} disabled={isSubmitting}>
-            <ImagePlus size={15} color={COLORS.primary} />
-            <Text style={styles.photoPickerText}>Choose from Gallery</Text>
           </TouchableOpacity>
         </View>
       )}

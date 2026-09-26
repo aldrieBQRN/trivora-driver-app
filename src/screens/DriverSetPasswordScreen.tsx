@@ -18,14 +18,20 @@ interface DriverSetPasswordScreenProps {
 }
 
 /**
- * Step 3 of registration — "Create Password": the final step, kept separate from the Account
- * Info step so password creation and the Terms & Privacy Policy agreement get their own focused
- * page rather than being bundled onto an already-busy form.
+ * Step 3 of registration — "Create Password": the final step, kept separate from the
+ * Select Person step so password creation and the Terms & Privacy Policy agreement
+ * get their own focused page rather than being bundled onto an already-busy form.
  */
 export default function DriverSetPasswordScreen({ onBack, accountInfo }: DriverSetPasswordScreenProps) {
   const { verifiedFranchise, login } = useDriverAuth();
   const operator = verifiedFranchise?.operator;
   const tricycle = verifiedFranchise?.tricycle;
+  // The SELECTED person this account belongs to (owner or separate assigned driver, chosen
+  // on the previous step) — all account identity comes from this existing record, never
+  // from anything typed here.
+  const person =
+    verifiedFranchise?.people?.find((p) => p.type === accountInfo.personType) ??
+    verifiedFranchise?.people?.[0];
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -47,59 +53,67 @@ export default function DriverSetPasswordScreen({ onBack, accountInfo }: DriverS
     if (Object.keys(nextErrors).length > 0) return;
 
     setLoading(true);
+    // Fallback only for a backend response that somehow carries no driver row — every
+    // identity field is taken from the verified franchise record, never assembled locally.
     const newDriver: DriverProfile = {
       id: operator?.id || Date.now(),
-      name: operator?.full_name || 'Juan Dela Cruz',
-      email: accountInfo.email,
-      mobile: accountInfo.mobile,
+      name: person?.full_name || operator?.full_name || 'Driver',
+      email: '',
+      mobile: person?.mobile_number || undefined,
       licenseNumber: operator?.license_number || '',
       todaZone: {
         id: 1,
-        code: 'TODA-BUCANA',
-        name: tricycle?.toda_zone || operator?.toda_zone || 'TODA Bucana',
-        terminal: 'Bucana Terminal',
+        code: 'GENERAL',
+        name: 'General Service',
+        terminal: 'Nasugbu',
         badgeColor: COLORS.primary,
         centerLat: 14.0638,
         centerLng: 120.6289,
         coverageKm: 3.0,
         baseFare: 20.0,
-        perKmRate: 10.0,
+        perKmRate: 5.0,
       },
       tricycle: {
         id: tricycle?.id || 1,
-        plateNumber: tricycle?.plate_number || 'ABC 1234',
-        bodyNumber: tricycle?.body_number || '04-128',
-        model: tricycle?.make_model || 'Kawasaki Barako II (Blue)',
+        plateNumber: tricycle?.plate_number || '',
+        codingNumber: tricycle?.coding_scheme_number || tricycle?.body_number || '',
+        model: tricycle?.make_model || '',
         iotDeviceId: accountInfo.trackingMode === 'iot_device' ? accountInfo.iotDeviceId : undefined,
         activeTrackingMode: accountInfo.trackingMode,
       },
-      rating: 4.92,
-      totalTrips: 128,
-      todayEarnings: 540.0,
+      // Same defaults the backend uses for a brand-new account (Driver::create) — this
+      // fallback never fabricates trip history or ratings for a profile the driver would see.
+      rating: 5.0,
+      totalTrips: 0,
+      todayEarnings: 0.0,
     };
 
     try {
+      // Only verification fields + the new password — no name, email, mobile, or birthday:
+      // the backend independently re-verifies the franchise permit and validates that the
+      // selected person_type is one of THIS franchise's actual owner/driver records, then
+      // links the account to that EXISTING person — so no duplicate is ever created.
       const res = await driverApi.register({
-        name: newDriver.name,
-        email: newDriver.email,
-        mobile_number: newDriver.mobile,
-        password,
         franchise_number: verifiedFranchise?.franchise_number,
-        date_of_birth: verifiedFranchise?.date_of_birth,
+        person_type: accountInfo.personType,
         verification_token: verifiedFranchise?.verification_token,
+        password,
+        confirm_password: confirmPassword,
         tracking_mode: accountInfo.trackingMode,
         iot_device_id: accountInfo.trackingMode === 'iot_device' ? accountInfo.iotDeviceId : undefined,
       });
-      login(res.driver ? mapAuthResponseToDriverProfile(res, newDriver.email) : newDriver, res.token);
+      login(res.driver ? mapAuthResponseToDriverProfile(res) : newDriver, res.token);
     } catch (err: any) {
       if (err?.status !== undefined) {
-        // The backend was reached and rejected the request outright (e.g. email already taken,
-        // invalid verification token) — a real failure, not a connectivity issue.
+        // The backend was reached and rejected the request outright (e.g. franchise already
+        // claimed, selected person not on file for this franchise, invalid verification
+        // token) — a real failure, not a connectivity issue.
         setErrors({ form: err.message || 'Could not create your account. Please check your details and try again.' });
         return;
       }
-      // Backend unreachable — fall back to local demo data so the flow stays testable offline.
-      login(newDriver);
+      // The backend could not be reached — registration has no local/demo data source, so
+      // the failure is reported honestly instead of signing the driver into fabricated data.
+      setErrors({ form: 'Could not reach the registration server. Please check your connection and try again.' });
     } finally {
       setLoading(false);
     }

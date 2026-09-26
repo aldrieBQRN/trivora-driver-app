@@ -106,7 +106,6 @@ export default function DriverEnRoutePickupScreen() {
       <TrivoraDriverMap
         driverLocation={{ lat: currentLat, lng: currentLng, heading: headingDeg }}
         isOnline
-        showTodaPill={false}
         showCompass
         target={
           pickupLat != null && pickupLng != null

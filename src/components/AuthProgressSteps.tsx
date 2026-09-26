@@ -9,11 +9,11 @@ interface AuthProgressStepsProps {
 
 const STEPS = [
   { step: 1, label: 'Verify Franchise' },
-  { step: 2, label: 'Account Info' },
+  { step: 2, label: 'Select Person' },
   { step: 3, label: 'Create Password' },
 ];
 
-/** 3-step progress indicator shared by Franchise Verification, Account Info, and Create Password. */
+/** 3-step progress indicator shared by Franchise Verification, Select Person, and Create Password. */
 export default function AuthProgressSteps({ currentStep }: AuthProgressStepsProps) {
   return (
     <View style={styles.row}>

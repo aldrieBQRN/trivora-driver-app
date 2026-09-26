@@ -8,10 +8,9 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
-import { ShieldCheck, CreditCard, Calendar, Info } from 'lucide-react-native';
+import { ShieldCheck, CreditCard, Info } from 'lucide-react-native';
 import AuthProgressSteps from '../components/AuthProgressSteps';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
@@ -22,6 +21,14 @@ interface DriverFranchiseVerificationScreenProps {
   onVerified: () => void;
 }
 
+/**
+ * Step 1 of registration — "Verify Franchise": the franchise permit number is the ONLY
+ * field. No date of birth, name, or any other personal detail is asked for (the old DOB
+ * entry is gone entirely, which also removes its local-Date/UTC round-trip that could show
+ * a selected day as one day earlier). On success the backend returns the franchise's
+ * registered people, which the next step displays for the user to select who this Driver
+ * App account belongs to.
+ */
 export default function DriverFranchiseVerificationScreen({
   onBack,
   onVerified,
@@ -30,41 +37,23 @@ export default function DriverFranchiseVerificationScreen({
   const { showToast } = useToast();
 
   const [franchiseNumber, setFranchiseNumber] = useState('');
-  const [dob, setDob] = useState<Date | null>(null);
-  const [showPicker, setShowPicker] = useState(false);
   const [verifying, setVerifying] = useState(false);
-
-  const dobLabel = dob
-    ? dob.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })
-    : 'MM/DD/YYYY';
-
-  const handleDateChange = (_event: unknown, selectedDate?: Date) => {
-    setShowPicker(Platform.OS === 'ios');
-    if (selectedDate) setDob(selectedDate);
-  };
 
   const handleVerify = async () => {
     // Alert.alert is a documented no-op on react-native-web, so these use the same in-app Toast
     // the rest of the app already relies on for web-visible feedback — Alert.alert would silently
     // swallow the message, making the button look completely unresponsive.
-    if (!franchiseNumber.trim() || !dob) {
-      showToast('Please fill in your franchise permit number and date of birth.', 'info');
-      return;
-    }
-
-    const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    if (age < 18) {
-      showToast('You must be at least 18 years old to register as a tricycle driver.', 'info');
+    if (!franchiseNumber.trim()) {
+      showToast('Please enter your franchise permit number.', 'info');
       return;
     }
 
     setVerifying(true);
     try {
-      const dobIso = dob.toISOString().slice(0, 10);
-      // The tricycle plate, TODA assignment, and franchise number are never collected here —
-      // they're resolved server-side from the franchise permit number and shown for confirmation
-      // on the next screen.
-      const result = await verifyFranchiseEligibility(franchiseNumber.trim(), dobIso);
+      // The tricycle plate, TODA assignment, franchise number, and the registered people are
+      // never collected here — they're resolved server-side from the franchise permit number
+      // and shown for confirmation/selection on the next screen.
+      const result = await verifyFranchiseEligibility(franchiseNumber.trim());
       if (result.eligible) {
         onVerified();
       }
@@ -97,56 +86,11 @@ export default function DriverFranchiseVerificationScreen({
           autoCapitalize="characters"
         />
 
-        <Text style={styles.label}>Date of Birth</Text>
-        {Platform.OS === 'web' ? (
-          // @react-native-community/datetimepicker has no web implementation at all (it renders
-          // null and just console.warns "not supported on: web") — tapping the field below did
-          // nothing visible, dob could never be set, and every "Verify" tap silently hit the
-          // Alert.alert('Missing Information', ...) branch, which is itself a documented no-op on
-          // react-native-web, so the button appeared completely unresponsive. A real HTML date
-          // input is the only thing that actually works here on web.
-          <View style={styles.dobField}>
-            <Calendar size={18} color={COLORS.primary} />
-            <input
-              type="date"
-              value={dob ? dob.toISOString().slice(0, 10) : ''}
-              max={new Date().toISOString().slice(0, 10)}
-              onChange={(e: any) => {
-                const val = e.target.value;
-                setDob(val ? new Date(`${val}T00:00:00`) : null);
-              }}
-              style={webDateInputStyle}
-            />
-          </View>
-        ) : (
-          <TouchableOpacity style={styles.dobField} onPress={() => setShowPicker(true)} activeOpacity={0.8}>
-            <Calendar size={18} color={COLORS.primary} />
-            <Text style={[styles.dobText, !dob && styles.dobPlaceholder]}>{dobLabel}</Text>
-          </TouchableOpacity>
-        )}
-        {showPicker && Platform.OS !== 'web' && (
-          <View>
-            <DateTimePicker
-              value={dob || new Date(1995, 0, 1)}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              maximumDate={new Date()}
-              onChange={handleDateChange}
-            />
-            {/* The iOS spinner is inline and has no built-in way to dismiss itself — without
-                this it stays open indefinitely once opened. */}
-            {Platform.OS === 'ios' && (
-              <TouchableOpacity style={styles.dobDoneBtn} onPress={() => setShowPicker(false)} activeOpacity={0.7}>
-                <Text style={styles.dobDoneText}>Done</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
-
         <View style={styles.infoBox}>
           <Info size={16} color={COLORS.primary} />
           <Text style={styles.infoText}>
-            Your information will be verified with the MTOP and TODA records.
+            Your franchise number will be matched against municipal MTOP records, then you'll
+            choose which registered person will use this account.
           </Text>
         </View>
 
@@ -165,20 +109,6 @@ export default function DriverFranchiseVerificationScreen({
     </KeyboardAvoidingView>
   );
 }
-
-// A plain DOM style object (not StyleSheet.create) — this is a real HTML <input>, not an RN
-// component, so it needs genuine CSS values rather than RN's StyleSheet registry.
-const webDateInputStyle = {
-  flex: 1,
-  height: 48,
-  border: 'none',
-  outline: 'none',
-  background: 'transparent',
-  fontSize: 14,
-  fontWeight: 700,
-  color: COLORS.textPrimary,
-  fontFamily: 'inherit',
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -211,43 +141,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 6,
     marginBottom: SPACING.lg,
-  },
-  label: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
-    marginBottom: 6,
-    marginTop: SPACING.sm,
-  },
-  dobField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: COLORS.surfaceInput,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    height: 50,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  dobText: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    fontWeight: '700',
-  },
-  dobPlaceholder: {
-    color: COLORS.textMuted,
-    fontWeight: '500',
-  },
-  dobDoneBtn: {
-    alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  dobDoneText: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.primary,
-    fontWeight: '800',
   },
   infoBox: {
     flexDirection: 'row',

@@ -53,6 +53,8 @@ export default function DriverInTransitScreen() {
   // geometry gets refetched from wherever the driver currently is instead of staying anchored to
   // the actual ride the passenger booked (previously this used currentLat/currentLng here, which
   // is what caused the drawn line to disagree with Passenger's pickup->dropoff route).
+  const hasTrip = pickupLat != null && pickupLng != null && dropoffLat != null && dropoffLng != null;
+
   const route = useLiveRoute(
     pickupLat != null && pickupLng != null ? { lat: pickupLat, lng: pickupLng } : null,
     dropoffLat != null && dropoffLng != null ? { lat: dropoffLat, lng: dropoffLng } : null
@@ -91,13 +93,19 @@ export default function DriverInTransitScreen() {
       <TrivoraDriverMap
         driverLocation={{ lat: currentLat, lng: currentLng, heading: headingDeg }}
         isOnline
-        showTodaPill={false}
         showCompass
+        // Trip framing: pickup pin + full pickup -> destination route + destination pin, fitted as a
+        // whole and NOT refit on the driver's GPS (tripDropoff mode). The driver's tricycle stays
+        // visible as a secondary marker. Without pickup coordinates, the previous destination-only
+        // target is kept.
         target={
-          dropoffLat != null && dropoffLng != null
-            ? { lat: dropoffLat, lng: dropoffLng, label: booking.dropoff, kind: 'dropoff' }
-            : undefined
+          hasTrip
+            ? { lat: pickupLat as number, lng: pickupLng as number, label: booking.pickup, kind: 'pickup' }
+            : dropoffLat != null && dropoffLng != null
+              ? { lat: dropoffLat, lng: dropoffLng, label: booking.dropoff, kind: 'dropoff' }
+              : undefined
         }
+        tripDropoff={hasTrip ? { lat: dropoffLat as number, lng: dropoffLng as number } : undefined}
         routeCoordinates={route?.coordinates}
         routeSource={route?.source}
         topInset={insets.top + 12 + topOverlayHeight}

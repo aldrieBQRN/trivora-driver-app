@@ -15,7 +15,20 @@ import StatusBadge from '../components/StatusBadge';
 import AppBottomSheet from '../components/AppBottomSheet';
 import { useLiveRoute } from '../hooks/useLiveRoute';
 
-const COUNTDOWN_START = 20;
+// Mirrors BookingDispatchService::OFFER_TIMEOUT_SECONDS on the backend — the backend, not this
+// value, is what actually expires an offer; keeping these in sync just avoids the driver's local
+// countdown reaching zero (and auto-declining) noticeably before or after the server's own clock.
+const OFFER_TIMEOUT_SECONDS = 25;
+
+/** Derives the starting countdown from the backend's own dispatched_at timestamp rather than
+ * always starting a fresh 25s on mount — so a slow render/navigation after the backend already
+ * targeted this driver doesn't hand them extra time beyond what the server considers the offer
+ * window, and a delayed mount doesn't undercount either. */
+function computeInitialCountdown(dispatchedAt?: string | null): number {
+  if (!dispatchedAt) return OFFER_TIMEOUT_SECONDS;
+  const elapsedSeconds = Math.floor((Date.now() - new Date(dispatchedAt).getTime()) / 1000);
+  return Math.max(0, OFFER_TIMEOUT_SECONDS - elapsedSeconds);
+}
 // A single fixed point, not a draggable range — the panel no longer responds to swipe gestures
 // (see AppBottomSheet), so there's nothing to snap between. Generous by design: it must
 // comfortably fit identity + fare + route + the slider without clipping.
@@ -39,7 +52,7 @@ export default function DriverDispatchScreen() {
     retryLocation,
     headingDeg,
   } = useDriverShift();
-  const [countdown, setCountdown] = useState(COUNTDOWN_START);
+  const [countdown, setCountdown] = useState(() => computeInitialCountdown(incomingBooking?.dispatchedAt));
   const [isAccepting, setIsAccepting] = useState(false);
   const isCancelledRef = useRef(false);
   const sheetRef = useRef<BottomSheet>(null);
@@ -76,10 +89,22 @@ export default function DriverDispatchScreen() {
   const pickupLat = incomingBooking?.pickupLat;
   const pickupLng = incomingBooking?.pickupLng;
 
-  const route = useLiveRoute(
-    currentLat != null && currentLng != null ? { lat: currentLat, lng: currentLng } : null,
-    pickupLat != null && pickupLng != null ? { lat: pickupLat, lng: pickupLng } : null
+  const dropoffLat = incomingBooking?.dropoffLat;
+  const dropoffLng = incomingBooking?.dropoffLng;
+  const hasTrip = pickupLat != null && pickupLng != null && dropoffLat != null && dropoffLng != null;
+
+  // The request screen shows the TRIP the driver is being asked to take: exact pickup -> road
+  // route -> exact destination (the existing fetchRoute via useLiveRoute). Only when the booking
+  // carries no destination does it fall back to the previous driver -> pickup route.
+  const tripRoute = useLiveRoute(
+    hasTrip ? { lat: pickupLat as number, lng: pickupLng as number } : null,
+    hasTrip ? { lat: dropoffLat as number, lng: dropoffLng as number } : null
   );
+  const approachRoute = useLiveRoute(
+    !hasTrip && currentLat != null && currentLng != null ? { lat: currentLat, lng: currentLng } : null,
+    !hasTrip && pickupLat != null && pickupLng != null ? { lat: pickupLat, lng: pickupLng } : null
+  );
+  const route = hasTrip ? tripRoute : approachRoute;
 
   const handleDecline = () => {
     if (isAccepting) return;
@@ -112,16 +137,21 @@ export default function DriverDispatchScreen() {
       <TrivoraDriverMap
         driverLocation={{ lat: currentLat, lng: currentLng, heading: headingDeg }}
         isOnline
-        showTodaPill={false}
         showCompass={false}
         target={
           pickupLat != null && pickupLng != null
             ? { lat: pickupLat, lng: pickupLng, label: booking.pickup, kind: 'pickup' }
             : undefined
         }
+        tripDropoff={hasTrip ? { lat: dropoffLat as number, lng: dropoffLng as number } : undefined}
+        // Trip view: only pickup pin + route + destination pin, no driver marker. Without a
+        // destination the previous driver -> pickup view (driver marker included) is kept.
+        showDriverMarker={!hasTrip}
         routeCoordinates={route?.coordinates}
         routeSource={route?.source}
-        topInset={insets.top + SPACING.lg + topOverlayHeight}
+        // topOverlayHeight is the overlay's full measured height, which already includes its
+        // paddingTop (safe area + SPACING.lg) — adding those again double-counted the top chrome.
+        topInset={topOverlayHeight}
         bottomInset={bottomInset}
         style={StyleSheet.absoluteFillObject}
       />
@@ -150,14 +180,16 @@ export default function DriverDispatchScreen() {
             <StatusBadge label={(booking.paymentMethod || 'cash').toUpperCase()} tone="brand" size="sm" />
           </View>
 
-          {/* Fare — the dominant figure on this screen, driven by typography not a box */}
+          {/* Fare — the dominant figure on this screen, driven by typography not a box. Priced
+              per passenger by trip distance, charged once per rider — booking.fare is already the
+              backend-computed total (farePerPassenger x passengerCount). */}
           <View style={styles.fareRow}>
             <Text style={styles.fareLabel}>Estimated Fare</Text>
             <Text style={styles.fareValue}>₱{booking.fare.toFixed(2)}</Text>
           </View>
           <Text style={styles.fareCaption}>
-            {booking.passengerCount} passenger{booking.passengerCount !== 1 ? 's' : ''} · ₱
-            {booking.farePerPassenger.toFixed(2)} each
+            ₱{booking.farePerPassenger.toFixed(2)} × {booking.passengerCount} passenger
+            {booking.passengerCount !== 1 ? 's' : ''}
           </Text>
 
           {/* Where */}

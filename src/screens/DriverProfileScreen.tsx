@@ -33,7 +33,7 @@ interface DriverProfileScreenProps {
 // sentence as plain text rather than inventing label/value rows to match Driver
 // Information's shape.
 const STATIC_MENU_COPY: Record<string, string> = {
-  help: 'For assistance, contact the TODA Bucana Dispatch Desk or the Nasugbu BPLO.',
+  help: 'For assistance, contact the Nasugbu TMO or the Nasugbu BPLO.',
   about: 'Trivora is the official municipal tricycle dispatch platform of Nasugbu, Batangas.',
 };
 
@@ -103,7 +103,9 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
             />
             <View style={styles.zoneRow}>
               <MapPin size={12} color={COLORS.textMuted} />
-              <Text style={styles.zoneText} numberOfLines={1}>{driver?.todaZone?.name || 'TODA Bucana'}</Text>
+              <Text style={styles.zoneText} numberOfLines={1}>
+                {driver?.tricycle?.plateNumber ? `Plate: ${driver.tricycle.plateNumber}` : 'Nasugbu, Batangas'}
+              </Text>
             </View>
           </View>
 
@@ -152,8 +154,7 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
           <DetailRow label="Full Name" value={driver?.name || '—'} />
           <DetailRow label="License Number" value={driver?.licenseNumber || '—'} />
           <DetailRow label="Mobile Number" value={driver?.mobile || '—'} />
-          <DetailRow label="Email Address" value={driver?.email || '—'} />
-          <DetailRow label="TODA Zone" value={driver?.todaZone?.name || '—'} last />
+          <DetailRow label="Email Address" value={driver?.email || '—'} last />
         </View>
       )}
 
@@ -161,7 +162,7 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
         icon={Truck}
         label="Vehicle & Franchise"
         subtitle={
-          driver?.tricycle ? `${driver.tricycle.plateNumber} · ${driver.tricycle.bodyNumber}` : undefined
+          driver?.tricycle ? `${driver.tricycle.plateNumber} · ${driver.tricycle.codingNumber}` : undefined
         }
         expanded={expanded === 'vehicle'}
         onPress={() => toggleSection('vehicle')}
@@ -169,7 +170,7 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
       {expanded === 'vehicle' && (
         <View style={styles.detailPanel}>
           <DetailRow label="Plate Number" value={driver?.tricycle?.plateNumber || '—'} />
-          <DetailRow label="Body Number" value={driver?.tricycle?.bodyNumber || '—'} />
+          <DetailRow label="Sticker Number" value={driver?.tricycle?.codingNumber || '—'} />
           <DetailRow label="Unit Model" value={driver?.tricycle?.model || '—'} />
           <DetailRow label="Tracking Source" value={trackingModeLabel} last />
         </View>

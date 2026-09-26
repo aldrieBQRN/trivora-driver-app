@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { MapContainer, TileLayer, Marker, Circle, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Circle, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Compass, Shield, ChevronRight } from 'lucide-react-native';
+import { Compass } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS } from '../constants/theme';
 import { TrivoraDriverMapProps } from './TrivoraDriverMap.types';
 import { haversineKm } from '../utils/geo';
@@ -11,6 +11,9 @@ import { haversineKm } from '../utils/geo';
 /** Mirrors the native map's re-frame threshold — see TrivoraDriverMap.native.tsx. */
 const REFRAME_THRESHOLD_KM = 0.12;
 const EDGE_MARGIN = 40;
+/** Home only: a later GPS fix this far from where Home was last framed re-centers the camera,
+ * until the driver has panned/zoomed themselves — see the native map for the full rationale. */
+const HOME_RECENTER_THRESHOLD_KM = 0.15;
 
 // Identical tile source to the Passenger app's web map — same CARTO Voyager basemap.
 const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=cb1_3qo7_1_ac41fdc9883213d666d06544';
@@ -50,6 +53,17 @@ interface MapControllerProps {
 function MapController({ driverLat, driverLng, target, topInset, bottomInset, recenterSignal }: MapControllerProps) {
   const map = useMap();
   const lastFramedRef = useRef<{ lat: number; lng: number } | null>(null);
+  const homeFramedRef = useRef<{ lat: number; lng: number } | null>(null);
+  const userMovedRef = useRef(false);
+
+  // Only genuine user gestures count — programmatic flyTo/setView also fire zoom/move events.
+  useMapEvents({ dragstart: () => { userMovedRef.current = true; } });
+  useEffect(() => {
+    const el = map.getContainer();
+    const onWheel = () => { userMovedRef.current = true; };
+    el.addEventListener('wheel', onWheel, { passive: true });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [map]);
 
   const frame = (animated: boolean) => {
     if (target) {
@@ -70,6 +84,7 @@ function MapController({ driverLat, driverLng, target, topInset, bottomInset, re
       // the driver's point would render if centered normally, shift that pixel by half the
       // top/bottom inset difference, and center on whatever geographic point lands there —
       // computed from the map's own current projection/zoom, not a guessed offset.
+      homeFramedRef.current = { lat: driverLat, lng: driverLng };
       const zoom = 16;
       const driverPixel = map.project(L.latLng(driverLat, driverLng), zoom);
       const verticalOffset = (topInset - bottomInset) / 2;
@@ -90,10 +105,20 @@ function MapController({ driverLat, driverLng, target, topInset, bottomInset, re
   // without this, a target-less map (Home) would frame once with no inset data and never correct
   // itself when the real values arrive a moment later.
   useEffect(() => {
+    if (!target && userMovedRef.current && homeFramedRef.current) return;
     frame(false);
     if (!target) lastFramedRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target?.lat, target?.lng, topInset, bottomInset]);
+
+  // Home only — re-center when a materially different fix replaces the one Home was framed on
+  // (coarse/cached first fix -> real fix); ordinary GPS ticks only move the marker.
+  useEffect(() => {
+    const framed = homeFramedRef.current;
+    if (target || !framed || userMovedRef.current) return;
+    if (haversineKm(framed, { lat: driverLat, lng: driverLng }) >= HOME_RECENTER_THRESHOLD_KM) frame(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverLat, driverLng]);
 
   useEffect(() => {
     if (!target || !lastFramedRef.current) return;
@@ -103,7 +128,10 @@ function MapController({ driverLat, driverLng, target, topInset, bottomInset, re
   }, [driverLat, driverLng]);
 
   useEffect(() => {
-    if (recenterSignal > 0) frame(true);
+    if (recenterSignal > 0) {
+      userMovedRef.current = false;
+      frame(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recenterSignal]);
 
@@ -113,10 +141,8 @@ function MapController({ driverLat, driverLng, target, topInset, bottomInset, re
 export default function TrivoraDriverMapWeb({
   driverLocation,
   isOnline,
-  zoneName = 'TODA Bucana Zone',
-  showTodaPill = true,
+  showDriverMarker = true,
   showCompass = true,
-  onTodaPress,
   onRecenter,
   target,
   routeCoordinates,
@@ -200,18 +226,10 @@ export default function TrivoraDriverMapWeb({
           />
         )}
 
-        <Marker position={[driverLocation.lat, driverLocation.lng]} icon={driverIcon} />
+        {showDriverMarker && <Marker position={[driverLocation.lat, driverLocation.lng]} icon={driverIcon} />}
 
         {target && targetIcon && <Marker position={[target.lat, target.lng]} icon={targetIcon} />}
       </MapContainer>
-
-      {showTodaPill && (
-        <TouchableOpacity style={styles.todaPill} onPress={onTodaPress} activeOpacity={0.88}>
-          <Shield size={12} color={COLORS.textInverse} />
-          <Text style={styles.todaPillText}>{zoneName}</Text>
-          <ChevronRight size={14} color={COLORS.textInverse} />
-        </TouchableOpacity>
-      )}
 
       {showCompass && (
         <TouchableOpacity style={styles.compassButton} onPress={handleRecenter} activeOpacity={0.8}>
@@ -232,28 +250,6 @@ const styles = StyleSheet.create({
   leafletContainer: {
     height: '100%',
     width: '100%',
-  },
-  todaPill: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#1E293B',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    ...SHADOWS.md,
-    zIndex: 500,
-  },
-  todaPillText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.3,
   },
   compassButton: {
     position: 'absolute',

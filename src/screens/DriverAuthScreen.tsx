@@ -10,13 +10,13 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { COLORS, RADIUS, SHADOWS, SPACING, BUTTONS, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useNetwork } from '../context/NetworkContext';
 import { driverApi, mapAuthResponseToDriverProfile, getApiBaseUrl } from '../services/api';
 import { DriverProfile } from '../types';
-import { Mail, Lock, Eye, EyeOff, Check } from 'lucide-react-native';
-import { GoogleIcon, TricycleIcon } from '../components/icons';
+import { Lock, Eye, EyeOff, Check, Phone } from 'lucide-react-native';
+import { TricycleIcon } from '../components/icons';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
 
@@ -33,20 +33,20 @@ const DEMO_DRIVER: DriverProfile = {
   licenseNumber: 'D01-12-345678',
   todaZone: {
     id: 1,
-    code: 'TODA-BUCANA',
-    name: 'TODA Bucana',
-    terminal: 'Bucana Terminal',
+    code: 'GENERAL',
+    name: 'General Service',
+    terminal: 'Nasugbu',
     badgeColor: COLORS.primary,
     centerLat: 14.0638,
     centerLng: 120.6289,
     coverageKm: 3.0,
     baseFare: 20.0,
-    perKmRate: 10.0,
+    perKmRate: 5.0,
   },
   tricycle: {
     id: 1,
     plateNumber: 'ABC 1234',
-    bodyNumber: '04-128',
+    codingNumber: '04-128',
     model: 'Kawasaki Barako II (Blue)',
     activeTrackingMode: 'mobile_app',
   },
@@ -55,33 +55,38 @@ const DEMO_DRIVER: DriverProfile = {
   todayEarnings: 540.0,
 };
 
-/** Driver sign-in screen — reached via the splash's "Login with Account" button (not pictured in the 12-screen mockup). */
+/** Driver sign-in screen — reached via the splash's "Login with Account" button (not pictured in the 12-screen mockup).
+ * Login uses the driver's EXISTING registered mobile number + password — the same credential
+ * the owner web portal uses; email-based login was removed from the flow entirely. */
 export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenProps) {
   const { login } = useDriverAuth();
   const { isConnected, checkConnection } = useNetwork();
 
-  const [email, setEmail] = useState('');
+  const [mobile, setMobile] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
-
-  const EMAIL_PATTERN = /^\S+@\S+\.\S+$/;
+  const [errors, setErrors] = useState<{ mobile?: string; password?: string; form?: string }>({});
 
   // There's no password-reset endpoint in the backend, so this doesn't pretend to send a reset
   // link — it points to the same real support contact already shown on the Profile screen.
   const handleForgotPassword = () => {
     Alert.alert(
       'Forgot Password?',
-      'For assistance, contact the TODA Bucana Dispatch Desk or the Nasugbu BPLO.'
+      'For assistance, contact the Nasugbu TMO or the Nasugbu BPLO.'
     );
   };
 
   const handleLogin = async () => {
     const nextErrors: typeof errors = {};
-    if (!email.trim()) nextErrors.email = 'Email address is required.';
-    else if (!EMAIL_PATTERN.test(email.trim())) nextErrors.email = 'Enter a valid email address.';
+    const digits = mobile.replace(/\D/g, '');
+    if (!digits) nextErrors.mobile = 'Mobile number is required.';
+    // Accepts the local 09… form, the bare 9… form, and the +63…/63… forms — the backend
+    // resolves every equivalent of the same stored number to the same account.
+    else if (!/^(?:09\d{9}|9\d{9}|639\d{9})$/.test(digits)) {
+      nextErrors.mobile = 'Enter a valid mobile number (e.g. 0917 123 4567).';
+    }
     if (!password.trim()) nextErrors.password = 'Password is required.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -90,20 +95,20 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
     try {
       let res;
       try {
-        res = await driverApi.login(email.trim(), password);
+        res = await driverApi.login(mobile.trim(), password);
       } catch (firstErr: any) {
         if (firstErr?.status !== undefined) {
           throw firstErr;
         }
         // Brief pause and auto-retry once in case of mobile network handshake delay
         await new Promise((r) => setTimeout(r, 1500));
-        res = await driverApi.login(email.trim(), password);
+        res = await driverApi.login(mobile.trim(), password);
       }
-      login(mapAuthResponseToDriverProfile(res, email.trim()), res.token);
+      login(mapAuthResponseToDriverProfile(res), res.token);
     } catch (err: any) {
       if (err?.status !== undefined) {
         // The backend was reached and rejected the credentials
-        setErrors({ form: err.message || 'Incorrect email or password. Please try again.' });
+        setErrors({ form: err.message || 'Incorrect mobile number or password. Please try again.' });
         return;
       }
       // Backend unreachable or offline — alert user with retry or demo mode option
@@ -115,7 +120,7 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
           {
             text: 'Continue in Demo Mode',
             onPress: () => {
-              login({ ...DEMO_DRIVER, email: email.trim() });
+              login({ ...DEMO_DRIVER, mobile: mobile.trim() });
             },
           },
         ]
@@ -123,17 +128,6 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
     } finally {
       setLoading(false);
     }
-  };
-
-  // No real Google OAuth backend exists yet — this mirrors the Passenger app's own social
-  // buttons, which are demo shortcuts into the same local session rather than a live provider.
-  const handleGoogleLogin = () => {
-    if (loading) return;
-    setLoading(true);
-    setTimeout(() => {
-      login(DEMO_DRIVER);
-      setLoading(false);
-    }, 700);
   };
 
   return (
@@ -166,17 +160,16 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
           )}
 
           <FormField
-            label="Email Address"
-            icon={Mail}
-            placeholder="juan@example.com"
-            value={email}
+            label="Mobile Number"
+            icon={Phone}
+            placeholder="0917 123 4567"
+            value={mobile}
             onChangeText={(v) => {
-              setEmail(v);
-              if (errors.email) setErrors((e) => ({ ...e, email: undefined }));
+              setMobile(v);
+              if (errors.mobile) setErrors((e) => ({ ...e, mobile: undefined }));
             }}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            error={errors.email}
+            keyboardType="phone-pad"
+            error={errors.mobile}
           />
 
           <FormField
@@ -224,22 +217,6 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
             loading={loading}
             style={styles.submitBtn}
           />
-
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.socialButton, loading && styles.socialButtonDisabled]}
-            onPress={handleGoogleLogin}
-            activeOpacity={0.75}
-            disabled={loading}
-          >
-            <GoogleIcon size={20} />
-            <Text style={styles.socialButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
 
           <TouchableOpacity style={styles.switchLink} onPress={onGoToRegister} activeOpacity={0.7}>
             <Text style={styles.switchLinkText}>New driver? Register with MTOP franchise check</Text>
@@ -342,42 +319,6 @@ const styles = StyleSheet.create({
   },
   submitBtn: {
     marginTop: SPACING.sm,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: SPACING.md,
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: COLORS.border,
-  },
-  dividerText: {
-    color: COLORS.textMuted,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  socialButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.background,
-    height: BUTTONS.touchHeight,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    gap: 10,
-    ...SHADOWS.sm,
-  },
-  socialButtonDisabled: {
-    opacity: 0.5,
-  },
-  socialButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
   },
   switchLink: {
     alignItems: 'center',

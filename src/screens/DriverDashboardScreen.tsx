@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useDriverShift } from '../context/DriverShiftContext';
-import { Star, Bell, Satellite, Gauge, ShieldAlert, ChevronRight } from 'lucide-react-native';
+import { Star, Bell, Satellite, Gauge, ShieldAlert, ChevronRight, ShieldOff, Ban } from 'lucide-react-native';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
 import LocationPendingView from '../components/LocationPendingView';
 import AppBottomSheet from '../components/AppBottomSheet';
@@ -82,6 +82,13 @@ export default function DriverDashboardScreen({
   const hasComplianceWarning = isOnline && (activeSpeedWarning || !!codingWarning);
   const firstName = (driver?.name || 'Juan Dela Cruz').split(' ')[0];
   const trackingLabel = trackingMode === 'iot_device' ? 'IoT Tracker' : 'Mobile GPS';
+  // TMO-controlled operational authorization on the driver's ASSIGNED FRANCHISE — never a status
+  // on the driver's own account. The backend is the actual enforcement boundary (it rejects going
+  // online/accepting bookings outright), this only keeps the driver from tapping an action that's
+  // guaranteed to fail and tells them why up front.
+  const isSuspended = driver?.franchiseStatus === 'suspended';
+  const isRevoked = driver?.franchiseStatus === 'revoked';
+  const isRestricted = isSuspended || isRevoked;
 
   if (currentLat == null || currentLng == null) {
     return <LocationPendingView isLocating={isLocatingDriver} error={locationError} onRetry={retryLocation} />;
@@ -94,7 +101,6 @@ export default function DriverDashboardScreen({
       <TrivoraDriverMap
         driverLocation={{ lat: currentLat, lng: currentLng, heading: headingDeg }}
         isOnline={isOnline}
-        zoneName={driver?.todaZone?.name || 'TODA Bucana Zone'}
         topInset={headerHeight}
         bottomInset={bottomInset}
         style={StyleSheet.absoluteFillObject}
@@ -105,7 +111,9 @@ export default function DriverDashboardScreen({
         tone="opaque"
         onLayout={handleHeaderLayout}
         title={`Hi, ${firstName}`}
-        subtitle={`Driver · ${driver?.todaZone?.name || 'TODA Bucana'} · ${
+        subtitle={`Driver · ${
+          driver?.tricycle?.plateNumber ? `${driver.tricycle.model || 'Tricycle'} (${driver.tricycle.plateNumber})` : 'Verified Driver'
+        } · ${
           averageRating != null ? `${averageRating.toFixed(2)} ★` : 'Not Rated'
         }`}
         leftSlot={
@@ -122,6 +130,29 @@ export default function DriverDashboardScreen({
 
       <AppBottomSheet ref={sheetRef} snapPoints={SNAP_POINTS} index={0}>
         <BottomSheetView style={[styles.sheetContent, { paddingBottom: insets.bottom + SPACING.md }]}>
+          {isRestricted && (
+            <View style={[styles.statusBanner, isRevoked ? styles.statusBannerDanger : styles.statusBannerWarning]}>
+              {isRevoked ? (
+                <Ban size={16} color={COLORS.dangerDark} />
+              ) : (
+                <ShieldOff size={16} color={COLORS.warning} />
+              )}
+              <View style={styles.statusBannerText}>
+                <Text style={[styles.statusBannerTitle, isRevoked ? styles.statusBannerTitleDanger : styles.statusBannerTitleWarning]}>
+                  {isRevoked ? 'Franchise Revoked' : 'Franchise Suspended'}
+                </Text>
+                <Text style={styles.statusBannerBody}>
+                  {isRevoked
+                    ? 'Your assigned franchise has been revoked. You cannot go online or accept bookings. Please contact the Municipal Tricycle Office for assistance.'
+                    : 'Your assigned franchise is currently suspended. You cannot go online or accept bookings while it is suspended.'}
+                </Text>
+                {driver?.franchiseStatusReason ? (
+                  <Text style={styles.statusBannerReason}>Reason: {driver.franchiseStatusReason}</Text>
+                ) : null}
+              </View>
+            </View>
+          )}
+
           {/* The one fact that matters most, told through scale rather than a boxed card —
               the same "typography carries the hierarchy" rule as the fare on the ride screens. */}
           <View>
@@ -130,7 +161,11 @@ export default function DriverDashboardScreen({
               {isOnline ? 'ONLINE' : 'OFFLINE'}
             </Text>
             <Text style={styles.heroSubtitle}>
-              {isOnline ? "You're visible to nearby ride requests" : 'Go online to start receiving rides'}
+              {isRestricted
+                ? 'Going online is disabled while your account is restricted'
+                : isOnline
+                ? "You're visible to nearby ride requests"
+                : 'Go online to start receiving rides'}
             </Text>
 
             {/* Always rendered (not conditionally mounted) so this row's space stays reserved
@@ -147,6 +182,7 @@ export default function DriverDashboardScreen({
             label={isOnline ? 'Go Offline' : 'Go Online'}
             onPress={() => setIsOnline(!isOnline)}
             variant={isOnline ? 'secondary' : 'primary'}
+            disabled={isRestricted && !isOnline}
           />
 
           {hasComplianceWarning && (
@@ -229,6 +265,45 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     fontWeight: '700',
+  },
+  statusBanner: {
+    flexDirection: 'row',
+    gap: 10,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.sm + 2,
+    borderWidth: 1,
+  },
+  statusBannerWarning: {
+    backgroundColor: COLORS.warningLight,
+    borderColor: COLORS.warning,
+  },
+  statusBannerDanger: {
+    backgroundColor: COLORS.dangerLight,
+    borderColor: COLORS.dangerBorder,
+  },
+  statusBannerText: {
+    flex: 1,
+    gap: 2,
+  },
+  statusBannerTitle: {
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '700',
+  },
+  statusBannerTitleWarning: {
+    color: COLORS.warning,
+  },
+  statusBannerTitleDanger: {
+    color: COLORS.dangerDark,
+  },
+  statusBannerBody: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+  },
+  statusBannerReason: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   warningRow: {
     flexDirection: 'row',

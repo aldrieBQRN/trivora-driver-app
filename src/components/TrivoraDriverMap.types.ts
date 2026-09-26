@@ -22,13 +22,16 @@ export interface TargetLocation {
 export interface TrivoraDriverMapProps {
   driverLocation: { lat: number; lng: number; heading: number };
   isOnline: boolean;
-  zoneName?: string;
-  showTodaPill?: boolean;
+  /** Draw the driver's own tricycle marker. Default true; the Dispatch/request screen turns it off
+   * so its background map shows only the passenger's pickup -> destination trip. */
+  showDriverMarker?: boolean;
   showCompass?: boolean;
-  onTodaPress?: () => void;
   onRecenter?: () => void;
   /** Pickup or drop-off pin for the active ride; omitted on the Home screen. */
   target?: TargetLocation;
+  /** Trip destination shown alongside `target` (the pickup) on the Dispatch/request screen, so the
+   * whole pickup -> destination trip is framed and both static pins are drawn. */
+  tripDropoff?: { lat: number; lng: number };
   /** Real road-following polyline from the routing service, or a 2-point fallback. */
   routeCoordinates?: RouteLatLng[];
   /** Lets the map render a fallback route as visibly distinct from a real one. */

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { RideHistoryItem } from '../types';
+import { rideDate } from '../utils/rideDate';
 import { Star, TrendingUp, TrendingDown } from 'lucide-react-native';
 import ScreenHeader from '../components/ScreenHeader';
 import SectionHeader from '../components/SectionHeader';
@@ -91,7 +92,7 @@ export default function DriverEarningsScreen() {
 
     const between = (list: RideHistoryItem[], start: Date, end?: Date) =>
       list.filter((t) => {
-        const d = new Date(t.date);
+        const d = rideDate(t);
         return d >= start && (!end || d < end);
       });
 
@@ -193,7 +194,7 @@ export default function DriverEarningsScreen() {
     return Array.from({ length: 7 }, (_, i) => {
       const day = new Date(today);
       day.setDate(today.getDate() - (6 - i));
-      const total = sumFares(periodStats.weekly.items.filter((t) => isSameDay(new Date(t.date), day)));
+      const total = sumFares(periodStats.weekly.items.filter((t) => isSameDay(rideDate(t), day)));
       return { label: WEEKDAY_LABELS[day.getDay()], total, isCurrent: isSameDay(day, today) };
     });
   }, [period, periodStats.weekly.items]);
@@ -211,7 +212,7 @@ export default function DriverEarningsScreen() {
       const end = Math.min(start + 6, daysInMonth);
       const total = sumFares(
         periodStats.monthly.items.filter((t) => {
-          const d = new Date(t.date);
+          const d = rideDate(t);
           return d.getFullYear() === year && d.getMonth() === month && d.getDate() >= start && d.getDate() <= end;
         })
       );

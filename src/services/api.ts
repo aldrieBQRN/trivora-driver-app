@@ -3,15 +3,30 @@ import Constants from 'expo-constants';
 import { DriverProfile, IncomingBooking, ViolationCitation } from '../types';
 
 function getDefaultApiBaseUrl(): string {
-  // Explicit override (Render cloud host or ngrok tunnel) takes top priority across all platforms including Web
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL.trim().replace(/\/+$/, '');
-  }
+  const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
+  const isPlaceholder = Boolean(envUrl && envUrl.includes('your-ngrok-url'));
 
   // Web runs on the local machine where Laravel is on port 8000; connect directly
   // rather than routing through an external tunnel or LAN IP heuristic.
   if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined' && window.location) {
+      const hostname = window.location.hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return 'http://localhost:8000/api/v1';
+      }
+      if (hostname && (!envUrl || isPlaceholder)) {
+        return `http://${hostname}:8000/api/v1`;
+      }
+    }
+    if (envUrl && !isPlaceholder) {
+      return envUrl;
+    }
     return 'http://localhost:8000/api/v1';
+  }
+
+  // Explicit override (Render cloud host or real ngrok tunnel) takes priority on mobile
+  if (envUrl && !isPlaceholder) {
+    return envUrl;
   }
 
   // In Expo Go on physical device connected via LAN (not --tunnel), hostUri holds the
@@ -122,12 +137,14 @@ async function appendFileToFormData(
 }
 
 export const driverApi = {
-  verifyEligibility: async (franchiseNumber: string, dateOfBirth: string | null = null) => {
+  /** Step 1 of registration — the franchise permit number is the ONLY verification input
+   * (no date of birth, no name). The response carries the franchise's registered people for
+   * the user to select which one this account belongs to. */
+  verifyEligibility: async (franchiseNumber: string) => {
     return request('/driver/verify-eligibility', {
       method: 'POST',
       body: JSON.stringify({
         franchise_number: franchiseNumber,
-        date_of_birth: dateOfBirth,
       }),
     });
   },
@@ -139,10 +156,12 @@ export const driverApi = {
     });
   },
 
-  login: async (email: string, password: string) => {
+  /** Driver login — the person's EXISTING registered mobile number + password (email is no
+   * longer part of the login flow). */
+  login: async (mobile: string, password: string) => {
     return request('/driver/login', {
       method: 'POST',
-      body: JSON.stringify({ login: email, password }),
+      body: JSON.stringify({ login: mobile, password }),
     });
   },
 
@@ -205,7 +224,7 @@ export const driverApi = {
 
   // Appends to the tricycle_locations violation-detection log AND updates the driver's own
   // current_lat/current_lng (DriverTelematicsController::store does both in one request as of
-  // the 60s-interval retune), so this single call is now what the Passenger app's active-booking
+  // the GPS-interval retune), so this single call is now what the Passenger app's active-booking
   // polling reads too — the shift watcher no longer needs a separate updateLocation call.
   sendTelematics: async (telemetry: any) => {
     return request('/driver/telematics', {
@@ -225,7 +244,7 @@ export const driverApi = {
   },
 
   // Kept for the passenger-facing active-booking path (BookingController::updateDriverLocation),
-  // which may still want a faster-than-60s cadence during an active ride in a future pass — the
+  // which may still want a tighter-than-15s cadence during an active ride in a future pass — the
   // shift-wide watcher itself no longer calls this, since sendTelematics now covers current_lat/
   // current_lng too.
   updateLocation: async (driverId: number | string, latitude: number, longitude: number) => {
@@ -321,10 +340,11 @@ export function mapBookingRecordToIncoming(
     fare: Number(raw.fare_amount ?? 0),
     passengerCount: Number(raw.passenger_count ?? 1),
     farePerPassenger: Number(raw.fare_per_passenger ?? raw.fare_amount ?? 0),
-    todaZoneName: raw.toda_zone?.name || 'TODA Zone',
+    todaZoneName: raw.toda_zone?.name || 'General Service',
     rating: Number(passenger.rating ?? 5.0),
     paymentMethod: raw.payment_method === 'gcash' ? 'gcash' : 'cash',
     passengerNotes: raw.passenger_notes || null,
+    dispatchedAt: raw.dispatched_at || null,
   };
 }
 
@@ -352,6 +372,7 @@ export function mapBookingRecordToHistoryItem(raw: any) {
     farePerPassenger: Number(raw.fare_per_passenger ?? raw.fare_amount ?? 0),
     date: dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
     time: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    timestamp: dateObj.toISOString(),
     status: (raw.status === 'completed' ? 'completed' : 'cancelled') as 'completed' | 'cancelled',
     paymentMethod: (raw.payment_method === 'gcash' ? 'gcash' : 'cash') as 'cash' | 'gcash',
     rating: raw.rating?.score != null ? Number(raw.rating.score) : null,
@@ -365,6 +386,7 @@ export function mapAuthResponseToDriverProfile(res: any, fallbackEmail?: string)
   const rawDriver = res.driver || {};
   const operator = res.operator || {};
   const tricycle = res.tricycle || {};
+  const franchise = res.franchise || {};
 
   return {
     id: rawDriver.id ?? res.user?.id ?? Date.now(),
@@ -375,19 +397,19 @@ export function mapAuthResponseToDriverProfile(res: any, fallbackEmail?: string)
     todaZone: {
       id: 0,
       code: '',
-      name: operator.toda_zone || tricycle.toda_zone || 'Unassigned TODA Zone',
+      name: operator.toda_zone || tricycle.toda_zone || 'General Service',
       terminal: '',
       badgeColor: '#1B3A69',
       centerLat: 0,
       centerLng: 0,
       coverageKm: 3.0,
       baseFare: 20.0,
-      perKmRate: 10.0,
+      perKmRate: 5.0,
     },
     tricycle: {
       id: tricycle.id ?? 0,
       plateNumber: tricycle.plate_number || 'N/A',
-      bodyNumber: tricycle.body_number || tricycle.coding_scheme_number || 'N/A',
+      codingNumber: tricycle.coding_scheme_number || tricycle.body_number || 'N/A',
       model: tricycle.make_model || `${tricycle.make || ''} ${tricycle.model || ''}`.trim() || 'N/A',
       iotDeviceId: undefined,
       activeTrackingMode: tricycle.active_tracking_mode === 'iot_device' ? 'iot_device' : 'mobile_app',
@@ -396,6 +418,9 @@ export function mapAuthResponseToDriverProfile(res: any, fallbackEmail?: string)
     totalTrips: Number(rawDriver.total_trips ?? 0),
     todayEarnings: Number(rawDriver.today_earnings ?? 0),
     avatarUrl: res.user?.profile_photo_url || undefined,
+    franchiseStatus: franchise.status === 'suspended' || franchise.status === 'revoked' ? franchise.status : 'active',
+    franchiseStatusReason: franchise.status_reason ?? null,
+    franchiseStatusChangedAt: franchise.status_changed_at ?? null,
   };
 }
 
@@ -421,8 +446,6 @@ export function mapViolationRecordToCitation(raw: any): ViolationCitation {
     status: isResolved ? 'resolved' : 'pending',
     driverStatus: raw.driver_status,
     driverStatusLabel: raw.driver_status_label,
-    // Same phrasing as the web ticket view (Operator\ViolationController::ticket()) for consistency.
-    detectionMethodLabel: raw.detection_method === 'automated' ? 'Automated IoT Detection' : 'Manual (TMO Personnel)',
     canAppeal: !!raw.can_appeal,
     location: raw.location ? { latitude: Number(raw.location.latitude), longitude: Number(raw.location.longitude) } : null,
     appeal: raw.appeal

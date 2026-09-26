@@ -65,7 +65,6 @@ export default function ViolationDetailModal({ visible, violation, onClose }: Vi
 
             <DetailRow label="Date" value={violation.date} />
             <DetailRow label="Type" value={violation.type} />
-            <DetailRow label="Detection Method" value={violation.detectionMethodLabel} />
             {violation.location && (
               <DetailRow
                 label="Location"
@@ -82,7 +81,7 @@ export default function ViolationDetailModal({ visible, violation, onClose }: Vi
                 <Text style={styles.sectionLabel}>APPEAL THIS VIOLATION</Text>
                 <Text style={styles.sectionHint}>
                   If this was recorded in error, or you were responding to a genuine emergency, explain what
-                  happened below. Appeals are reviewed by the TODA/TMO office.
+                  happened below. Appeals are reviewed by the TMO office.
                 </Text>
                 <AppealFormFields key={violation.id} onSubmit={handleAppealSubmit} />
               </View>
@@ -95,7 +94,7 @@ export default function ViolationDetailModal({ visible, violation, onClose }: Vi
                   <Text style={styles.statusPanelTitle}>Appeal Under Review</Text>
                   <Text style={styles.statusPanelBody}>
                     Your appeal was submitted on {formatDate(appeal.submittedAt)} and is being reviewed by the
-                    TODA/TMO office. You'll be notified once a decision is made.
+                    TMO office. You'll be notified once a decision is made.
                   </Text>
                 </View>
               </View>

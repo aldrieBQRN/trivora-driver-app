@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
@@ -12,7 +11,7 @@ import {
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { PendingAccountInfo } from '../types';
-import { CheckCircle2, Mail, ArrowLeft, Cpu } from 'lucide-react-native';
+import { CheckCircle2, ArrowLeft, Cpu, User, Calendar, Phone, MapPin } from 'lucide-react-native';
 import AuthProgressSteps from '../components/AuthProgressSteps';
 import FloatingIconButton from '../components/FloatingIconButton';
 import FormField from '../components/FormField';
@@ -27,23 +26,33 @@ interface DriverRegistrationScreenProps {
 }
 
 /**
- * Step 2 of registration — "Account Info": confirms the verified franchise/vehicle, then collects
- * the driver's email, mobile number, and GPS tracking method. Password creation and the Terms &
- * Privacy Policy agreement live on their own separate step (DriverSetPasswordScreen) so this step
- * stays focused on account/vehicle info only.
+ * Step 2 of registration — "Select Person": shows the people registered to the verified
+ * franchise (the Tricycle Owner always, plus the separate assigned Tricycle Driver when
+ * one exists) as selectable cards — Full Name, Birthday, Mobile Number, Barangay, all
+ * READ-ONLY from the franchise/application record — and the user must pick which of them
+ * will use this Driver App account. The chosen person is re-validated server-side at
+ * registration, so the account can only ever belong to an actual owner/driver of this
+ * franchise. Also shows the verified franchise/unit and the GPS tracking method choice.
+ * No email, name, mobile number, or birthday is ever collected here: those details belong
+ * to the existing person records and are confirmed, never re-entered.
+ * Password creation and the Terms & Privacy Policy agreement live on their own separate step
+ * (DriverSetPasswordScreen).
  */
 export default function DriverRegistrationScreen({ onBack, onNext, initialValues }: DriverRegistrationScreenProps) {
   const { verifiedFranchise } = useDriverAuth();
-  const operator = verifiedFranchise?.operator;
   const tricycle = verifiedFranchise?.tricycle;
+  // The franchise's registered people — owner (+ separate assigned driver) — read straight
+  // off the record the backend just verified against. The user picks one of these.
+  const people = verifiedFranchise?.people ?? [];
 
-  const [email, setEmail] = useState(initialValues?.email ?? '');
-  const [mobile, setMobile] = useState(initialValues?.mobile ?? '');
+  const [personType, setPersonType] = useState<'owner' | 'driver' | null>(
+    initialValues?.personType ?? (people.length === 1 ? people[0].type : null)
+  );
   const [trackingMode, setTrackingMode] = useState<'mobile_app' | 'iot_device'>(
     initialValues?.trackingMode ?? 'mobile_app'
   );
   const [iotDeviceId, setIotDeviceId] = useState(initialValues?.iotDeviceId ?? '');
-  const [errors, setErrors] = useState<{ email?: string; mobile?: string; iotDeviceId?: string }>({});
+  const [errors, setErrors] = useState<{ personType?: string; iotDeviceId?: string }>({});
 
   // Switching back to Mobile clears any typed device id so a stray value from a prior IoT
   // selection can never linger in state and get accidentally submitted.
@@ -55,17 +64,18 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
     }
   };
 
-  const EMAIL_PATTERN = /^\S+@\S+\.\S+$/;
-  const MOBILE_DIGITS_PATTERN = /^9\d{9}$/;
+  const handleSelectPerson = (type: 'owner' | 'driver') => {
+    setPersonType(type);
+    if (errors.personType) setErrors((e) => ({ ...e, personType: undefined }));
+  };
 
   const handleNext = () => {
-    const nextErrors: typeof errors = {};
-    const mobileDigits = mobile.replace(/\D/g, '');
-    if (!email.trim()) nextErrors.email = 'Email address is required.';
-    else if (!EMAIL_PATTERN.test(email.trim())) nextErrors.email = 'Enter a valid email address.';
-    if (!MOBILE_DIGITS_PATTERN.test(mobileDigits)) {
-      nextErrors.mobile = 'Enter a valid 10-digit mobile number (e.g. 912 345 6789).';
+    if (!personType) {
+      setErrors({ personType: 'Select which registered person will use this Driver App.' });
+      return;
     }
+
+    const nextErrors: typeof errors = {};
     if (trackingMode === 'iot_device' && !iotDeviceId.trim()) {
       nextErrors.iotDeviceId = 'Enter the IoT hardware device ID.';
     }
@@ -73,12 +83,20 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
     if (Object.keys(nextErrors).length > 0) return;
 
     onNext({
-      email: email.trim(),
-      mobile: `+63 ${mobile.trim()}`,
+      personType,
       trackingMode,
       iotDeviceId: trackingMode === 'iot_device' ? iotDeviceId.trim() : undefined,
     });
   };
+
+  const detailRows = (person: (typeof people)[number]) => [
+    { label: 'Full Name', icon: User, value: person.full_name },
+    // Exact server-formatted strings — never re-parsed through a local Date/UTC conversion,
+    // so the recorded day always displays as recorded.
+    { label: 'Birthday', icon: Calendar, value: person.birthday || person.date_of_birth },
+    { label: 'Mobile Number', icon: Phone, value: person.mobile_number },
+    { label: 'Barangay', icon: MapPin, value: person.barangay },
+  ];
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -95,61 +113,87 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
             <CheckCircle2 size={28} color="#FFFFFF" />
           </View>
           <Text style={styles.verifiedTitle}>Franchise Verified!</Text>
-          <Text style={styles.verifiedSub}>You are an approved Tricycle Operator.</Text>
+          <Text style={styles.verifiedSub}>
+            {verifiedFranchise?.owner_is_driver
+              ? 'You are the registered owner and driver of this unit.'
+              : 'A separate tricycle driver is assigned to this unit.'}
+          </Text>
 
           <View style={styles.verifiedDetailsBox}>
             <View style={styles.verifiedRow}>
-              <Text style={styles.verifiedLabel}>Name</Text>
-              <Text style={styles.verifiedValue}>{operator?.full_name || 'Juan Dela Cruz'}</Text>
-            </View>
-            <View style={styles.verifiedRow}>
-              <Text style={styles.verifiedLabel}>TODA Zone</Text>
-              <Text style={styles.verifiedValue}>{operator?.toda_zone || 'TODA Bucana'}</Text>
-            </View>
-            <View style={styles.verifiedRow}>
               <Text style={styles.verifiedLabel}>Franchise Permit No.</Text>
-              <Text style={styles.verifiedValue}>{verifiedFranchise?.franchise_number || 'MTOP-2024-0089'}</Text>
+              <Text style={styles.verifiedValue}>{verifiedFranchise?.franchise_number || '—'}</Text>
             </View>
             <View style={styles.verifiedRow}>
-              <Text style={styles.verifiedLabel}>Plate / Body No.</Text>
-              <Text style={styles.verifiedValue}>{tricycle?.plate_number || 'ABC 1234'}</Text>
+              <Text style={styles.verifiedLabel}>Status</Text>
+              {/* The registry's own status field (active/suspended) straight off the API
+                  response — the same tricycle.status the TMO Active Tricycle Registry shows. */}
+              <Text style={styles.verifiedValue}>
+                {tricycle?.status
+                  ? tricycle.status.charAt(0).toUpperCase() + tricycle.status.slice(1)
+                  : '—'}
+              </Text>
+            </View>
+            <View style={styles.verifiedRow}>
+              <Text style={styles.verifiedLabel}>Plate / Sticker Number</Text>
+              <Text style={styles.verifiedValue}>
+                {tricycle ? `${tricycle.plate_number} / ${tricycle.coding_scheme_number || tricycle.body_number}` : '—'}
+              </Text>
+            </View>
+            <View style={styles.verifiedRow}>
+              <Text style={styles.verifiedLabel}>Unit</Text>
+              <Text style={styles.verifiedValue}>{tricycle?.make_model || '—'}</Text>
             </View>
           </View>
         </View>
 
-        <Text style={styles.sectionTitle}>Account Info</Text>
-
-        <FormField
-          label="Email Address"
-          icon={Mail}
-          placeholder="juan@example.com"
-          value={email}
-          onChangeText={(v) => {
-            setEmail(v);
-            if (errors.email) setErrors((e) => ({ ...e, email: undefined }));
-          }}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          error={errors.email}
-        />
-
-        <Text style={styles.label}>Mobile Number</Text>
-        <View style={[styles.inputBox, errors.mobile && styles.inputBoxError]}>
-          <Text style={styles.prefixText}>+63</Text>
-          <View style={styles.prefixDivider} />
-          <TextInput
-            style={styles.input}
-            placeholder="912 345 6789"
-            placeholderTextColor={COLORS.textMuted}
-            value={mobile}
-            onChangeText={(v) => {
-              setMobile(v);
-              if (errors.mobile) setErrors((e) => ({ ...e, mobile: undefined }));
-            }}
-            keyboardType="phone-pad"
-          />
-        </View>
-        {errors.mobile ? <Text style={styles.errorText}>{errors.mobile}</Text> : null}
+        {/* The franchise's registered people — READ-ONLY existing records offered as choices.
+            The user picks which of them this Driver App account belongs to; no detail is ever
+            typed, edited, or invented here, and registration re-validates the choice
+            server-side against this same franchise. Deliberately without email addresses. */}
+        <Text style={styles.sectionTitle}>Who will use this Driver App?</Text>
+        <Text style={styles.sectionSubtitle}>
+          Choose one of the people registered to this franchise.
+        </Text>
+        {people.map((registeredPerson) => {
+          const isSelected = personType === registeredPerson.type;
+          return (
+            <TouchableOpacity
+              key={registeredPerson.type}
+              style={[styles.personCard, isSelected && styles.personCardSelected]}
+              onPress={() => handleSelectPerson(registeredPerson.type)}
+              activeOpacity={0.8}
+            >
+              <View style={styles.personCardHeader}>
+                <View style={[styles.radioCircle, isSelected && styles.radioCircleActive]}>
+                  {isSelected && <View style={styles.radioDot} />}
+                </View>
+                <Text style={styles.personRole}>{registeredPerson.role}</Text>
+              </View>
+              {detailRows(registeredPerson).map((row, index, rows) => {
+                const RowIcon = row.icon;
+                return (
+                  <View
+                    key={row.label}
+                    style={[styles.personRow, index < rows.length - 1 && styles.personRowDivider]}
+                  >
+                    <View style={styles.personRowLabel}>
+                      <RowIcon size={15} color={COLORS.primary} />
+                      <Text style={styles.personRowLabelText}>{row.label}</Text>
+                    </View>
+                    <Text style={styles.personRowValue} numberOfLines={2}>
+                      {row.value || '—'}
+                    </Text>
+                  </View>
+                );
+              })}
+            </TouchableOpacity>
+          );
+        })}
+        {errors.personType && <Text style={styles.errorText}>{errors.personType}</Text>}
+        <Text style={styles.personCardNote}>
+          These details come from your existing franchise record and cannot be edited here.
+        </Text>
 
         <Text style={styles.label}>GPS Telematics Tracking Method</Text>
         <View style={styles.trackingOptionsRow}>
@@ -265,47 +309,80 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     marginBottom: SPACING.sm,
   },
+  sectionSubtitle: {
+    ...TYPOGRAPHY.bodySmall,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.sm,
+  },
+  personCard: {
+    backgroundColor: COLORS.surfaceInput,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  personCardSelected: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryTint,
+  },
+  personCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+    marginBottom: 2,
+  },
+  personRole: {
+    ...TYPOGRAPHY.body,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+  },
+  errorText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.danger,
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  personRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 12,
+  },
+  personRowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  personRowLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
+  },
+  personRowLabelText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+  },
+  personRowValue: {
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    textAlign: 'right',
+    flexShrink: 1,
+  },
+  personCardNote: {
+    ...TYPOGRAPHY.micro,
+    color: COLORS.textMuted,
+    marginTop: 6,
+  },
   label: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     marginBottom: 6,
     marginTop: SPACING.sm,
-  },
-  inputBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surfaceInput,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    height: 50,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  inputBoxError: {
-    borderColor: COLORS.danger,
-    backgroundColor: COLORS.dangerLight,
-  },
-  errorText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.danger,
-    marginTop: 4,
-  },
-  input: {
-    flex: 1,
-    fontSize: 14,
-    color: COLORS.textPrimary,
-    fontWeight: '700',
-  },
-  prefixText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  prefixDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: COLORS.border,
   },
   submitBtn: {
     marginTop: SPACING.xl,

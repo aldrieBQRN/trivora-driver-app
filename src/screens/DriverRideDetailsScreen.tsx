@@ -119,7 +119,6 @@ export default function DriverRideDetailsScreen({ item, onBack }: DriverRideDeta
               <TrivoraDriverMap
                 driverLocation={{ lat: item.pickupLat as number, lng: item.pickupLng as number, heading: 0 }}
                 isOnline
-                showTodaPill={false}
                 showCompass={false}
                 target={{
                   lat: item.dropoffLat as number,

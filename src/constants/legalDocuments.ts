@@ -9,7 +9,7 @@ export const TERMS_OF_SERVICE_SECTIONS = [
   },
   {
     heading: '2. Franchise Eligibility',
-    body: 'Registration is limited to holders of a valid, active MTOP franchise on file with the Nasugbu BPLO. Trivora independently verifies your franchise permit number, franchise status, and date of birth against municipal records before an account is created. A suspended, expired, or unapproved franchise cannot be used to register or operate.',
+    body: 'Registration is limited to holders of a valid, active MTOP franchise on file with the Nasugbu BPLO. Trivora independently verifies your franchise permit number and franchise status against municipal records, then lets you select which registered person (the Tricycle Owner or the assigned Tricycle Driver) will use this account before an account is created. A suspended, expired, or unapproved franchise cannot be used to register or operate.',
   },
   {
     heading: '3. Vehicle & GPS Telematics',
@@ -17,11 +17,11 @@ export const TERMS_OF_SERVICE_SECTIONS = [
   },
   {
     heading: '4. Driver Conduct',
-    body: 'You agree to observe standardized municipal fares, comply with color-coding and route assignments for your TODA zone, and treat passengers professionally. Violations detected through telematics (e.g. coding-day operation, overspeeding) are logged and may result in citations under existing TMO procedures.',
+    body: 'You agree to observe standardized municipal fares, comply with color-coding and route guidelines for municipal tricycles, and treat passengers professionally. Violations detected through telematics (e.g. coding-day operation, overspeeding) are logged and may result in citations under existing TMO procedures.',
   },
   {
     heading: '5. Account Responsibility',
-    body: 'You are responsible for keeping your password confidential and for all activity under your account. Notify the TODA dispatch desk or BPLO immediately if you suspect unauthorized access.',
+    body: 'You are responsible for keeping your password confidential and for all activity under your account. Notify the TMO or BPLO immediately if you suspect unauthorized access.',
   },
   {
     heading: '6. Suspension & Termination',
@@ -36,7 +36,7 @@ export const TERMS_OF_SERVICE_SECTIONS = [
 export const PRIVACY_POLICY_SECTIONS = [
   {
     heading: '1. Information We Collect',
-    body: 'When you register, we collect your name, email, mobile number, date of birth, and franchise/license details as verified against BPLO operator and franchise records. We do not accept or store any vehicle, plate, or franchise identifier you type in manually — only what is confirmed from the authoritative municipal record.',
+    body: 'When you register, we verify your franchise permit number and franchise status against municipal BPLO operator and franchise records, then link your login account to the person you select from those same records — including your existing mobile number. We do not accept or store any name, email, mobile, vehicle, plate, or franchise identifier you type in manually — only what is confirmed from the authoritative municipal record.',
   },
   {
     heading: '2. Location & GPS Data',
@@ -56,7 +56,7 @@ export const PRIVACY_POLICY_SECTIONS = [
   },
   {
     heading: '6. Your Rights',
-    body: 'You may request a copy of your personal data or ask that inaccurate information be corrected by contacting the Nasugbu BPLO or the TODA dispatch desk associated with your zone.',
+    body: 'You may request a copy of your personal data or ask that inaccurate information be corrected by contacting the Nasugbu BPLO or the TMO office.',
   },
   {
     heading: '7. Contact',

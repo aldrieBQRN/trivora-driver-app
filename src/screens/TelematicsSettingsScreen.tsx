@@ -25,7 +25,6 @@ export default function TelematicsSettingsScreen({ onBack }: TelematicsSettingsS
     updateTrackingMode,
     currentLat,
     currentLng,
-    speedKmh,
     headingDeg,
   } = useDriverShift();
 
@@ -150,10 +149,6 @@ export default function TelematicsSettingsScreen({ onBack }: TelematicsSettingsS
             <View style={styles.gridItem}>
               <Text style={styles.gridLabel}>LONGITUDE</Text>
               <Text style={styles.gridVal}>{currentLng != null ? currentLng.toFixed(6) : '—'}</Text>
-            </View>
-            <View style={styles.gridItem}>
-              <Text style={styles.gridLabel}>CURRENT SPEED</Text>
-              <Text style={styles.gridVal}>{speedKmh.toFixed(1)} km/h</Text>
             </View>
             <View style={styles.gridItem}>
               <Text style={styles.gridLabel}>HEADING</Text>

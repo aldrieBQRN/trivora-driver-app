@@ -12,6 +12,7 @@ import { AppState, AppStateStatus, DeviceEventEmitter, Platform } from 'react-na
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDriverAuth } from './DriverAuthContext';
 import { useToast } from '../components/Toast';
+import { rideDate } from '../utils/rideDate';
 import { useCurrentLocation } from '../hooks/useCurrentLocation';
 import {
   driverApi,
@@ -21,25 +22,41 @@ import {
 } from '../services/api';
 import { MUNICIPAL_SPEED_LIMIT_KMH, checkColorCodingViolation } from '../constants/todaRoutes';
 import { ViolationCitation, IncomingBooking, RideHistoryItem } from '../types';
-import { LOCATION_TASK_NAME, LOCATION_EVENT_NAME, TRACKING_MODE_STORAGE_KEY, IS_ONLINE_STORAGE_KEY } from '../tasks/locationTask';
+import {
+  LOCATION_TASK_NAME,
+  LOCATION_EVENT_NAME,
+  TRACKING_MODE_STORAGE_KEY,
+  IS_ONLINE_STORAGE_KEY,
+  SESSION_STORAGE_KEY,
+  LAST_SENT_AT_STORAGE_KEY,
+  GPS_TRANSMITTER_STORAGE_KEY,
+  GPS_FIX_DELIVERY_INTERVAL_MS,
+  GpsTransmitter,
+} from '../tasks/locationTask';
 
 const ACTIVE_RIDE_STATUSES = ['accepted', 'arrived', 'in_transit'] as const;
-const PENDING_REQUEST_POLL_MS = 6000;
+// Background DATA refresh cadence — pending dispatch and ride history are live server state the
+// driver is waiting on, so they refresh on the project-wide 5-second standard. Read-only GETs:
+// they never transmit GPS and never touch the transmission cadence below.
+const PENDING_REQUEST_POLL_MS = 5000;
 // History doesn't need to be near-real-time, just eventually consistent without requiring an
 // app restart — a passenger's rating can land any time after their ride completes.
-const HISTORY_REFRESH_POLL_MS = 15000;
-// Target GPS reporting cadence, passed to Location.watchPositionAsync. Fixed at the project's
-// required 60-second interval — do not lower this without a corresponding change to the backend/
-// TMO staleness thresholds that are derived from it (see ColorCodingRuleService/tracking config on
-// the backend). Every fix is sent regardless of movement — there is deliberately no distance/
-// movement filter on the sending decision (see applyFix below), so a stationary tricycle still
-// reports on this same cadence.
-const WATCH_TIME_INTERVAL_MS = 60000;
+const HISTORY_REFRESH_POLL_MS = 5000;
+// THE GPS transmission cadence. Every sender in this file (the scheduled watcher tick, the native
+// position watch, the app-resume catch-up) must pass claimTransmitSlot() before sending, which
+// admits at most one transmission per GPS_TRANSMISSION_INTERVAL_MS — so this constant is the
+// single source of truth for how often a ping reaches the backend, however many timers ask.
+//
+// Deliberately TIME-based with no distance/movement filter on the sending decision, so a
+// stationary tricycle reports on exactly the same 5-second cadence as a moving one and a
+// distanceInterval on the native watch can never suppress the scheduled update. Transmission only:
+// UI screen refreshes are unrelated to this and cannot produce a GPS record.
+const GPS_TRANSMISSION_INTERVAL_MS = 5000;
 // How long the app can sit backgrounded before a resume is treated as needing an immediate
 // catch-up ping rather than just waiting for the next natural watcher tick — one interval's
 // worth of gap is the threshold, so the visible gap after resuming is bounded to roughly the
-// actual time spent backgrounded, not "backgrounded time + up to another 60s."
-const BACKGROUND_CATCHUP_THRESHOLD_MS = WATCH_TIME_INTERVAL_MS;
+// actual time spent backgrounded, not "backgrounded time + up to another interval."
+const BACKGROUND_CATCHUP_THRESHOLD_MS = GPS_TRANSMISSION_INTERVAL_MS;
 
 interface PendingPing {
   latitude: number;
@@ -157,7 +174,25 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       // with the same safe `true` default, for the same reason — nothing could have been orphaned
       // before this app has ever gone online once.
 
-      // Pure foreground tracking with watchPositionAsync & interval polling — no background TaskManager required.
+      // Background-delivery reconciliation for this relaunch, run before the watcher effect below
+      // can (re)start anything. startLocationUpdatesAsync() registers a persistent OS-level task,
+      // so a state where those updates are still running but this launch has no shift to track
+      // must be closed out here: driver offline, or no driver session left to authenticate a send
+      // with. When it is legitimately still online with a session, nothing is touched — the
+      // watcher effect is the single starter, and its startBackgroundUpdates() is idempotent
+      // (it checks hasStartedLocationUpdatesAsync first), so a relaunch just re-enters the state
+      // it was already in instead of starting a second sender.
+      if (Platform.OS === 'web') return;
+      try {
+        const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+        if (!started) return;
+        const sessionRaw = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
+        if (restoredOnline && sessionRaw) return;
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      } catch {
+        // Updates never started, background permission not granted yet, or the native module is
+        // unavailable in this environment — every one of those means "nothing to reconcile".
+      }
     })();
     // Runs once per app process start — deliberately not re-run on driver/login changes, since an
     // orphaned task is a device-level leftover, not something tied to whichever driver is
@@ -295,8 +330,8 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     [historyList]
   );
 
-  const isToday = (dateStr: string) => {
-    const d = new Date(dateStr);
+  const isToday = (item: RideHistoryItem) => {
+    const d = rideDate(item);
     const now = new Date();
     return (
       d.getFullYear() === now.getFullYear() &&
@@ -306,7 +341,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   };
 
   const todaysCompletedHistory = useMemo(
-    () => completedHistory.filter((h) => isToday(h.date)),
+    () => completedHistory.filter((h) => isToday(h)),
     [completedHistory]
   );
 
@@ -341,6 +376,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   }, [driver]);
 
   const applyLocationFix = (coords: { lat: number; lng: number } | null) => {
+    if (__DEV__) console.log('[driver-loc] initial fix from useCurrentLocation:', coords);
     if (!coords) return;
     setCurrentLat(coords.lat);
     setCurrentLng(coords.lng);
@@ -359,8 +395,9 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     requestCurrentLocation().then(applyLocationFix);
   };
 
-  // Single send path used by both the steady 60s watcher tick and the AppState catch-up ping
-  // below. If a previous send failed and is still pending, flushes it alongside this reading via
+  // Single send path used by the scheduled 15s watcher tick, the position-watch fallback and the
+  // AppState catch-up ping below — all of which must win claimTransmitSlot() first. If a previous
+  // send failed and is still pending, flushes it alongside this reading via
   // the batch endpoint (so no reading is silently lost to a single dropped network blip); on
   // success either way, clears the pending slot. On failure, this reading becomes the new (and
   // only) pending one — never accumulated.
@@ -384,25 +421,158 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // ── GPS transmission ownership + the shared cross-context cadence stamp ────────────────────
+  // Exactly ONE side may write a record per 15s window, and which side that is follows the app
+  // state: active → this file's scheduled pollOnce() interval; backgrounded → locationTask.ts
+  // (the OS background location task). The handover is persisted because locationTask.ts runs
+  // outside the React tree and must reach the same decision on its own, including across a
+  // headless relaunch. It fails closed: a stale value can only delay a send, never enable two.
+  // Web is untouched — there is no background task in a browser tab, so the scheduled tick below
+  // stays the one and always-favourable sender and this flag is simply never changed.
+  const transmitterRef = useRef<GpsTransmitter>('foreground');
+  const setTransmitter = (next: GpsTransmitter) => {
+    if (Platform.OS === 'web') return;
+    if (transmitterRef.current === next) return;
+    transmitterRef.current = next;
+    AsyncStorage.setItem(GPS_TRANSMITTER_STORAGE_KEY, next).catch(() => {});
+  };
+
+  // The single gate every GPS transmission must pass through before it can reach the backend.
+  // It admits at most one transmission per GPS_TRANSMISSION_INTERVAL_MS, no matter which timer
+  // asks — this is what stops the scheduled tick, the native position watch, the resume
+  // catch-up and the background location task from each writing their own record for the same
+  // moment. Synchronous check-and-set, so two timers firing in the same JS turn can never both
+  // win it.
+  const lastTransmitSlotRef = useRef(0);
+  const claimTransmitSlot = (): { at: number; previous: number } | null => {
+    const now = Date.now();
+    const previous = lastTransmitSlotRef.current;
+    if (now - previous < GPS_TRANSMISSION_INTERVAL_MS) return null;
+    lastTransmitSlotRef.current = now;
+    // Publish the claim to the one place the background task can read (it cannot see this ref).
+    // Written at claim time rather than after the send: the window is consumed either way, and
+    // it is what keeps the cadence continuous across the foreground→background handover instead
+    // of restarting the 15s count every time the app changes state.
+    AsyncStorage.setItem(LAST_SENT_AT_STORAGE_KEY, String(now)).catch(() => {});
+    return { at: now, previous };
+  };
+  // Hands a claimed slot back when the sender that took it never obtained a fix to send — a
+  // single GPS hiccup must not hold the 15-second window shut and block the fallback paths (or
+  // stretch the next scheduled tick past its interval).
+  const rollbackTransmitSlot = (claim: { at: number; previous: number } | null) => {
+    if (claim && lastTransmitSlotRef.current === claim.at) {
+      lastTransmitSlotRef.current = claim.previous;
+      // Compare-and-set on the persisted copy too: only roll it back if nobody else has claimed
+      // the window in the meantime, so restoring our slot can never erase a claim the background
+      // task just published (which would otherwise let it send twice inside one interval).
+      AsyncStorage.getItem(LAST_SENT_AT_STORAGE_KEY)
+        .then((stored) => {
+          if (Number(stored || 0) !== claim.at) return null;
+          return AsyncStorage.setItem(LAST_SENT_AT_STORAGE_KEY, String(claim.previous));
+        })
+        .catch(() => {});
+    }
+  };
+  // Absorb the persisted stamp — written by the background task while this side was backgrounded —
+  // into the in-memory slot before claiming, so a ping that just went out from the background is
+  // not followed by an "immediate" foreground ping seconds later. Purely monotonic; the sync
+  // check-and-set above remains the authoritative gate.
+  const hydrateTransmitSlot = async () => {
+    try {
+      const persisted = Number((await AsyncStorage.getItem(LAST_SENT_AT_STORAGE_KEY)) || 0);
+      if (Number.isFinite(persisted) && persisted > lastTransmitSlotRef.current) {
+        lastTransmitSlotRef.current = persisted;
+      }
+    } catch {
+      // Storage unavailable — the in-memory slot still guards this side on its own.
+    }
+  };
+  // The one claim path every sender uses: hydrate first, then the synchronous check-and-set.
+  const claimTransmitSlotAsync = async () => {
+    await hydrateTransmitSlot();
+    return claimTransmitSlot();
+  };
+
+  // ── OS background location lifecycle ──────────────────────────────────────────────────────
+  // startLocationUpdatesAsync()/stopLocationUpdatesAsync() are called from exactly two places —
+  // the watcher effect (start on online, stop in its cleanup) and the startup reconciliation
+  // above (stop an orphan) — both of them idempotent, so online → running, offline → stopped,
+  // and no path can end up with two live registrations. Best-effort throughout: a refused
+  // background permission, a missing native module or an environment that cannot host background
+  // location all degrade to "no background delivery", never to a crash or a weaker foreground
+  // path — the scheduled tick and the position watch below keep working exactly as before.
+  const startBackgroundUpdates = async (): Promise<boolean> => {
+    if (Platform.OS === 'web') return false;
+    try {
+      if (await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME)) return true;
+      // The OS requires its own "always"/background grant on top of the foreground one already
+      // requested. Asked here — at the moment tracking actually begins — never forced, and a
+      // denial simply means background delivery stays off.
+      const { status } = await Location.requestBackgroundPermissionsAsync();
+      if (status !== 'granted') {
+        if (__DEV__) {
+          console.warn('[telemetry:bg] background location permission not granted — background GPS stays off, foreground tracking continues.');
+        }
+        return false;
+      }
+      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+        accuracy: Location.Accuracy.Balanced,
+        // Sampling rate only — locationTask.ts decides whether a fix is transmitted (15s).
+        timeInterval: GPS_FIX_DELIVERY_INTERVAL_MS,
+        // No displacement filter: a stationary tricycle must still produce a fix every cycle,
+        // which is exactly what the 15s scheduled update requires.
+        distanceInterval: 0,
+        activityType: Location.ActivityType.AutomotiveNavigation,
+        // Never let the OS pause delivery while the tricycle is parked — a parked unit is still
+        // a unit the coding-violation record needs to locate.
+        pausesUpdatesAutomatically: false,
+        showsBackgroundLocationIndicator: true,
+        // Required for sustained delivery on Android 8+ (and it also covers the background
+        // permission there): the OS keeps the app alive behind a user-visible notification
+        // instead of freezing it shortly after it backgrounds. The permissions it needs are
+        // already declared in app.json (FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION,
+        // ACCESS_BACKGROUND_LOCATION) and the Expo config plugin enables the service.
+        foregroundService: {
+          notificationTitle: 'Trivora Driver',
+          notificationBody: 'Sending GPS for your active shift',
+          notificationColor: '#1D2542',
+        },
+      });
+      return true;
+    } catch (err) {
+      if (__DEV__) console.warn('[telemetry:bg] could not start background location updates:', err);
+      return false;
+    }
+  };
+  const stopBackgroundUpdates = () => {
+    if (Platform.OS === 'web') return;
+    Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+  };
+
   // Continuous real-GPS tracking while online — the same trigger condition the old simulated
   // interval used, since every state that needs live position (available, dispatched, en route to
-  // pickup, in transit) is only reachable while online. Every fix is applied and sent — no
-  // distance/movement filter — so a stationary tricycle still reports on the same fixed cadence
-  // as a moving one (required for reliable coding-violation GPS coverage while parked).
+  // pickup, in transit) is only reachable while online. Every fix is applied to the UI, and
+  // transmission happens through claimTransmitSlot() on a fixed 15-second schedule with no
+  // distance/movement filter — so a stationary tricycle still reports on the same cadence as a
+  // moving one (required for reliable coding-violation GPS coverage while parked).
   //
-  // Native (iOS/Android): tries Location.startLocationUpdatesAsync + the locationTask.ts
-  // TaskManager task first — this keeps delivering fixes (and, inside the task itself, sending
-  // them) while the app is backgrounded or the screen is locked, subject to the OS/platform
-  // limits documented in locationTask.ts and below. That API is NOT supported in Expo Go on
-  // either platform (Expo's own documented limitation) — if it throws, this falls back to the
-  // same active-poll approach as web (see pollOnce below). Only one of the two is ever active at
-  // once per shift.
+  // Actual sending path: the fixed-timer poll (pollOnce below) is the primary and scheduled
+  // sender. The native position watch underneath is a fallback sender only — a passive watch has
+  // no guaranteed schedule (observed directly against this project's backend logs: it sent
+  // reliably for a few cycles then silently stopped firing while the app was still open, iOS's
+  // Balanced accuracy deciding there was "nothing new" to report), so it is never allowed to set
+  // the cadence, only to cover a window the scheduled tick failed to. Both go through the same
+  // slot gate, so their combined output is still exactly one record per interval.
   //
-  // Why polling, not watchPositionAsync, for the fallback: a passive watch has no guaranteed
-  // schedule — observed directly against this project's backend logs, it sent reliably for a few
-  // cycles then silently stopped firing altogether while the app was still open (iOS's Balanced
-  // accuracy can decide there's "nothing new" to report). Actively requesting a fresh fix on a
-  // fixed timer guarantees a request every interval regardless of what the native layer thinks.
+  // Background delivery: locationTask.ts registers the TaskManager task that keeps receiving
+  // fixes while the app is backgrounded/screen-locked (same 15s cadence by contract), and THIS
+  // effect is the single place that starts and stops it — startBackgroundUpdates() once the
+  // foreground permission is in hand (it also requests the background permission the OS
+  // requires), stopBackgroundUpdates() in the cleanup below. So online → background delivery
+  // running; offline / tracking-mode change / driver change → cleanup stops it. Transmission
+  // then follows the ownership flag: while this app is active, pollOnce() below owns the cadence
+  // and the task only feeds the UI; the moment the app backgrounds the AppState effect below
+  // hands the cadence over to the task. One sender at a time, both paced by the shared stamp.
   //
   // Web: background tasks don't exist in a browser tab, so web always uses the same poll, and
   // sends directly from here (never via locationTask.ts, which only registers on native).
@@ -415,12 +585,23 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     let activePollTimer: ReturnType<typeof setInterval> | null = null;
     let bgEventSubscription: { remove: () => void } | null = null;
-    let bgUpdatesStarted = false;
+
+    // Own the cadence for as long as this run of the watcher is what's driving the app. Seeded
+    // from the real app state rather than assumed, so a run that begins while already
+    // backgrounded hands the cadence straight to the OS task instead of to a foreground timer
+    // the OS has suspended. An unknown/null state counts as foreground — failing toward the
+    // long-verified scheduled tick is the safe direction (and it is the normal state at mount).
+    setTransmitter(AppState.currentState === 'background' ? 'background' : 'foreground');
 
     // Updates only the on-screen state (map position, heading, speed) — never sends anything.
     // Shared by the web poll and the native background-task event listener below.
     const applyFixState = (coords: { latitude: number; longitude: number; heading: number | null; speed: number | null }) => {
       const { latitude, longitude, heading, speed } = coords;
+      if (__DEV__) {
+        console.log(`[driver-heading] latitude=${latitude}`);
+        console.log(`[driver-heading] longitude=${longitude}`);
+        console.log(`[driver-heading] heading=${heading} (expo-location coords.heading, degrees 0-360, -1/null = unknown)`);
+      }
       setCurrentLat(latitude);
       setCurrentLng(longitude);
 
@@ -446,8 +627,20 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     // distanceInterval). Explicitly polling guarantees a request every interval regardless of
     // whether the native layer thinks the position "changed."
     const pollOnce = async () => {
+      // Claim this cycle's transmission slot up front, anchored to the TICK rather than to
+      // however long the fix takes. Recording the slot only after a variable-length GPS fix
+      // would let a slow fix drift the cadence past 15s (and a fast one silently skip a tick);
+      // anchoring here keeps the schedule exact. A denied claim just means another sender has
+      // already covered this window — the on-screen position still updates either way.
+      const slot =
+        trackingMode === 'mobile_app' && transmitterRef.current === 'foreground'
+          ? await claimTransmitSlotAsync()
+          : null;
+      const releaseSlot = () => rollbackTransmitSlot(slot);
+
       try {
-        const lastKnown = await Location.getLastKnownPositionAsync().catch(() => null);
+        // maxAge: a days-old cached fix must never move the marker/camera to where the device used to be.
+        const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 60_000 }).catch(() => null);
         if (lastKnown && !cancelled) {
           applyFixState(lastKnown.coords);
         }
@@ -458,9 +651,15 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
           timeoutPromise,
         ]);
 
-        if (cancelled || !position || !('coords' in position)) return;
+        if (cancelled || !position || !('coords' in position)) {
+          // No fix to send — hand the slot back so the position watch can still cover this window.
+          releaseSlot();
+          return;
+        }
         const { nextHeading, nextSpeedKmh } = applyFixState(position.coords);
-        if (trackingMode === 'mobile_app') {
+        if (slot) {
+          // Transmission (not UI refresh): the one scheduled GPS send. The claim already
+          // guarantees this record is at least 15 seconds after the previous one.
           sendPing({
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
@@ -470,7 +669,9 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
           });
         }
       } catch {
-        // Transient GPS hiccup — simply tries again next tick.
+        // Transient GPS hiccup — release the slot so the window isn't held shut, and simply
+        // try again next tick.
+        releaseSlot();
       }
     };
 
@@ -479,14 +680,30 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (cancelled || status !== 'granted') return;
 
+        // Hand the OS the ability to keep delivering fixes while this app is backgrounded —
+        // once, after the foreground grant is in place, and only in mobile-GPS mode (in IoT mode
+        // the device itself transmits, so the app must not add a second background source).
+        if (trackingMode === 'mobile_app') {
+          const started = await startBackgroundUpdates();
+          if (cancelled && started) {
+            // The effect was cleaned up while the permission dialog was up — don't leave a
+            // registration behind that nothing in this tree will ever stop again.
+            stopBackgroundUpdates();
+            return;
+          }
+          if (__DEV__ && started) console.log('[telemetry:bg] background location updates running');
+        }
+
         // Perform initial instant poll
         await pollOnce();
         if (cancelled) return;
 
-        // Active interval: keeps telemetry reporting reliably to backend
-        activePollTimer = setInterval(pollOnce, 15000);
+        // The scheduled GPS_TRANSMISSION_INTERVAL_MS (5-second) transmission cadence. Nothing else — not a UI refresh, not the
+        // position watch — is allowed to set the rate at which GPS reaches the backend.
+        activePollTimer = setInterval(pollOnce, GPS_TRANSMISSION_INTERVAL_MS);
 
-        // Continuous real-time movement watcher (works on native without requiring dangerous ForegroundService)
+        // Native position watch: keeps the on-screen map/speed readout live between scheduled
+        // ticks, and doubles as a fallback SENDER only when the scheduled tick couldn't get a fix.
         if (Platform.OS !== 'web') {
           try {
             const watchSub = await Location.watchPositionAsync(
@@ -498,7 +715,18 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
               (position) => {
                 if (cancelled) return;
                 const { nextHeading, nextSpeedKmh } = applyFixState(position.coords);
-                if (trackingMode === 'mobile_app') {
+                if (trackingMode !== 'mobile_app') return;
+                // Same ownership rule as the scheduled tick: while the app is backgrounded the
+                // OS task owns the cadence (the watch can still be delivering on Android), so
+                // the watch must not also send.
+                if (transmitterRef.current !== 'foreground') return;
+                // Same gate as the scheduled tick. While the tick is healthy this claim is
+                // always denied (the tick already holds the window), so the watch can never put
+                // a duplicate record next to a scheduled one. Its timeInterval/distanceInterval
+                // only decide when the watch *asks* to send — they have no say over the
+                // scheduled update, which travels through pollOnce instead.
+                claimTransmitSlotAsync().then((slot) => {
+                  if (cancelled || !slot) return;
                   sendPing({
                     latitude: position.coords.latitude,
                     longitude: position.coords.longitude,
@@ -506,7 +734,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
                     heading_deg: nextHeading ?? headingDeg,
                     recorded_at: new Date().toISOString(),
                   });
-                }
+                });
               }
             );
             if (cancelled) {
@@ -527,28 +755,42 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       if (activePollTimer) clearInterval(activePollTimer);
       bgEventSubscription?.remove();
+      // Going offline, switching tracking mode, a driver change and unmount all funnel through
+      // this one cleanup, so the OS registration can never outlive the state that authorised it
+      // — "Offline stops background delivery" is enforced here rather than left to the task's
+      // own self-heal. Harmless when nothing was started (web, or a denied permission).
+      stopBackgroundUpdates();
+      setTransmitter('none');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOnline, trackingMode, driver?.id]);
 
-  // Defensive fallback, now that real background tracking exists via locationTask.ts — OEM battery
+  // Defensive fallback for when foreground/background delivery was starved — OEM battery
   // optimizers (Xiaomi/Huawei/Samsung's aggressive background-kill policies) or a driver who only
-  // granted "While Using" location on iOS can still cause the background task to be silently
-  // starved despite being correctly registered. This effect bounds the visible gap after a resume
-  // to roughly "actual time spent backgrounded" by firing one immediate catch-up ping, instead of
-  // silently waiting up to another full 60s for the next tick — harmless if the background task
-  // was already delivering fine (the backend's per-day dedup means an extra ping never double-
-  // counts a violation).
+  // granted "While Using" location on iOS can go quiet despite tracking being active. This effect
+  // bounds the visible gap after a resume to roughly "actual time spent backgrounded" by firing
+  // one immediate catch-up ping, instead of silently waiting for the next scheduled tick — and
+  // it goes through the same slot gate, so it can never write a duplicate record next to a
+  // transmission that just went out.
   useEffect(() => {
     if (!isOnline || !driver) return;
 
     const handleAppStateChange = async (nextState: AppStateStatus) => {
       if (nextState === 'background' || nextState === 'inactive') {
         wentBackgroundAtRef.current = Date.now();
+        // Hand the cadence to the OS background task: from here on pollOnce() must not transmit
+        // (its timer can still fire briefly on Android) or it would write beside the task.
+        setTransmitter('background');
         return;
       }
 
       if (nextState !== 'active') return;
+      // Take the cadence back before anything below claims a slot, so the task stops being the
+      // transmitter the moment the app is visible again — and make sure the background
+      // registration this resume is replacing actually exists (it may never have been started:
+      // startBackgroundUpdates() refuses to run while the app is backgrounded).
+      setTransmitter('foreground');
+      if (trackingMode === 'mobile_app') await startBackgroundUpdates();
 
       const wentBackgroundAt = wentBackgroundAtRef.current;
       wentBackgroundAtRef.current = null;
@@ -567,6 +809,11 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         const nextSpeedKmh = speed != null && speed >= 0 ? Number((speed * 3.6).toFixed(1)) : speedKmh;
         setHeadingDeg(nextHeading);
         setSpeedKmh(nextSpeedKmh);
+
+        // Same gate as the watcher tick: if a transmission already went out inside the last
+        // 15 seconds — very likely from the background task we just took the cadence back from —
+        // this resume has no gap to fill and writes nothing.
+        if (!(await claimTransmitSlotAsync())) return;
 
         sendPing({
           latitude,
@@ -595,8 +842,14 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
 
     // Push the client's current online/available state to the backend so the dispatch
     // gate (which reads driver.is_online / is_available) matches what the app displays
-    // from the very first screen after login, instead of whatever was last saved.
-    driverApi.updateOnlineStatus(isOnline, isAvailable).catch(() => {});
+    // from the very first screen after login, instead of whatever was last saved. If TMO has
+    // suspended/revoked this driver since the local "online" flag was last persisted, the
+    // backend rejects this and the local state must fall back to offline instead of showing
+    // "Online" for a session the server never actually accepted.
+    driverApi.updateOnlineStatus(isOnline, isAvailable).catch(() => {
+      setIsOnlineState(false);
+      setIsAvailableState(false);
+    });
 
     (async () => {
       try {
@@ -793,17 +1046,37 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   }, [driver?.id, activeBooking?.id, rideState]);
 
   const setIsOnline = (online: boolean) => {
+    const previousOnline = isOnline;
+    const previousAvailable = isAvailable;
     setIsOnlineState(online);
     setIsAvailableState(online);
     if (driver) {
-      driverApi.updateOnlineStatus(online, online).catch(() => {});
+      // The backend is the authority on whether this driver may actually go online (e.g. TMO
+      // has suspended/revoked them since this screen last loaded) — a rejection here must revert
+      // the optimistic toggle and tell the driver why, not leave the UI showing "Online" while
+      // the server never accepted it.
+      driverApi.updateOnlineStatus(online, online).catch((err: any) => {
+        setIsOnlineState(previousOnline);
+        setIsAvailableState(previousAvailable);
+        showToast(
+          err?.message || 'Could not update your online status. Please check your connection and try again.',
+          'info'
+        );
+      });
     }
   };
 
   const setIsAvailable = (avail: boolean) => {
+    const previousAvailable = isAvailable;
     setIsAvailableState(avail);
     if (driver) {
-      driverApi.updateOnlineStatus(isOnline, avail).catch(() => {});
+      driverApi.updateOnlineStatus(isOnline, avail).catch((err: any) => {
+        setIsAvailableState(previousAvailable);
+        showToast(
+          err?.message || 'Could not update your availability. Please check your connection and try again.',
+          'info'
+        );
+      });
     }
   };
 
@@ -922,6 +1195,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         farePerPassenger: activeBooking.farePerPassenger,
         date: now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
         time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        timestamp: now.toISOString(),
         status: 'completed',
         paymentMethod: activeBooking.paymentMethod || 'cash',
       });

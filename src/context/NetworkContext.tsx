@@ -42,7 +42,7 @@ export function NetworkProvider({ children }: NetworkProviderProps) {
       const backendTimer = setTimeout(() => backendController.abort(), 8000);
 
       try {
-        const res = await fetch(`${getApiBaseUrl()}/toda-zones`, {
+        const res = await fetch(`${getApiBaseUrl()}/health`, {
           method: 'GET',
           headers: { Accept: 'application/json' },
           signal: backendController.signal,

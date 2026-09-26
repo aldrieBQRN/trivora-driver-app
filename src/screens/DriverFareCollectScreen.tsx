@@ -25,7 +25,8 @@ export default function DriverFareCollectScreen() {
         <Text style={styles.title}>Ride Completed</Text>
         {activeBooking && <Text style={styles.subtitle}>{activeBooking.passengerName}</Text>}
 
-        {/* Total fare is the one number that matters here — typography carries it, not a card */}
+        {/* Total fare is the one number that matters here — typography carries it, not a card.
+            Priced per passenger by trip distance, charged once per rider. */}
         <View style={styles.fareHero}>
           <Text style={styles.fareHeroLabel}>Total Fare</Text>
           <Text style={styles.fareHeroValue}>₱{totalFare.toFixed(2)}</Text>

@@ -22,11 +22,7 @@ interface DriverAuthContextType {
    * spinner. Ride-derived stats (rating/completed rides/earnings) are unaffected by this — those
    * already come from DriverShiftContext's own continuously-polled historyList, not from here. */
   refreshProfile: () => Promise<void>;
-  verifyFranchiseEligibility: (
-    licenseNumber: string,
-    dob?: string | null,
-    plateOrBodyNumber?: string | null
-  ) => Promise<VerifiedOperatorData>;
+  verifyFranchiseEligibility: (franchiseNumber: string) => Promise<VerifiedOperatorData>;
   setDriver: React.Dispatch<React.SetStateAction<DriverProfile | null>>;
 }
 
@@ -148,50 +144,29 @@ export function DriverAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const verifyFranchiseEligibility = async (
-    franchiseNumber: string,
-    dob: string | null = null
+    franchiseNumber: string
   ): Promise<VerifiedOperatorData> => {
     let res: any;
     try {
-      res = await driverApi.verifyEligibility(franchiseNumber, dob);
+      res = await driverApi.verifyEligibility(franchiseNumber);
     } catch (err: any) {
       if (err?.status !== undefined) {
-        // The backend was reached and rejected the request outright (e.g. 422/500) — a real
-        // failure, not a connectivity issue. Surface it instead of faking a pass.
+        // The backend was reached and rejected the request outright (franchise not found,
+        // already registered, validation) — surface its verdict instead of faking a pass.
         throw err;
       }
-      // Backend unreachable — fall back to local demo data so the registration flow stays
-      // testable without a running API, matching the rest of this app's offline-demo behavior.
-      const mockVerified: VerifiedOperatorData = {
-        success: true,
-        eligible: true,
-        verification_token: 'tk_demo_' + Date.now(),
-        date_of_birth: dob || undefined,
-        franchise_number: franchiseNumber.toUpperCase(),
-        operator: {
-          id: 201,
-          full_name: 'JUAN DELA CRUZ',
-          license_number: 'D01-12-345678',
-          toda_zone: 'TODA Bucana',
-          barangay: 'Bucana, Nasugbu Batangas',
-        },
-        tricycle: {
-          id: 501,
-          plate_number: 'ABC 1234',
-          body_number: '04-128',
-          status: 'active',
-          make_model: 'Kawasaki Barako II',
-          toda_zone: 'TODA Bucana',
-        },
-      };
-      setVerifiedFranchise(mockVerified);
-      return mockVerified;
+      // The backend could not be reached. Verification has NO local/demo data source: the
+      // franchise, owner and driver must come from the municipal database, so a connectivity
+      // failure is reported honestly rather than rendered as sample person information.
+      throw new Error(
+        'Could not reach the registration server. Please check your connection and try again.'
+      );
     }
 
     if (res && res.success && res.eligible) {
-      // The backend doesn't echo the submitted DOB back — carry it forward here so
-      // DriverRegistrationScreen can resend it for the server to independently re-verify.
-      const verified: VerifiedOperatorData = { ...res, date_of_birth: dob || undefined };
+      // Everything the next screen shows (people list, franchise, unit) is already the
+      // backend's authoritative response — carried as-is, with no client-side date handling.
+      const verified: VerifiedOperatorData = { ...res };
       setVerifiedFranchise(verified);
       return verified;
     }
