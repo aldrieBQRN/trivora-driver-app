@@ -43,6 +43,11 @@ function getDefaultApiBaseUrl(): string {
     }
   }
 
+  // Standalone app / physical device fallback: default to live Render backend
+  if (!__DEV__) {
+    return 'https://trivora-mh55.onrender.com/api/v1';
+  }
+
   // Fallback for Android emulator connecting to host PC
   if (Platform.OS === 'android') {
     return 'http://10.0.2.2:8000/api/v1';
