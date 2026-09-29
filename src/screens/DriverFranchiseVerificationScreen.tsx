@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     marginTop: SPACING.lg,
     borderWidth: 1,
-    borderColor: 'rgba(27, 58, 105, 0.15)',
+    borderColor: 'rgba(29, 37, 66, 0.15)',
   },
   infoText: {
     flex: 1,

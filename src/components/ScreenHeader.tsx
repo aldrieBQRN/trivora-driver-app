@@ -9,7 +9,7 @@ import FloatingIconButton from './FloatingIconButton';
 
 interface ScreenHeaderProps {
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   onBack?: () => void;
   /** Custom element before the title — e.g. a driver avatar on Home. Ignored when `onBack` is set. */
   leftSlot?: ReactNode;
@@ -61,8 +61,10 @@ export default function ScreenHeader({
 
       <View style={styles.titleCol}>
         <Text style={[styles.title, useLightText && styles.titleOverlay]} numberOfLines={1}>{title}</Text>
-        {subtitle ? (
+        {typeof subtitle === 'string' ? (
           <Text style={[styles.subtitle, useLightText && styles.subtitleOverlay]} numberOfLines={1}>{subtitle}</Text>
+        ) : subtitle ? (
+          subtitle
         ) : null}
       </View>
 
@@ -132,7 +134,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    ...TYPOGRAPHY.h3,
+    ...TYPOGRAPHY.h2,
     color: COLORS.textPrimary,
   },
   titleOverlay: {

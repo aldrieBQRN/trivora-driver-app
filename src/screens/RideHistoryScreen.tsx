@@ -76,7 +76,9 @@ export default function RideHistoryScreen() {
                   dropoff={{ label: 'Destination', address: item.dropoff }}
                   compact
                 />
-                <Text style={styles.metaText}>{item.passengerName} · {item.time}</Text>
+                <Text style={styles.metaText}>
+                  {item.isManual ? `Manual Ride · ${item.passengerName}` : item.isWalkIn ? 'Scan to Ride' : item.passengerName} · {item.time}
+                </Text>
               </View>
               <View style={styles.rowRight}>
                 <Text style={styles.fareText}>₱{item.fare.toFixed(2)}</Text>

@@ -139,6 +139,10 @@ export interface RideHistoryItem {
    * strings only: Hermes (the app's JS engine) can't reliably parse "September 26, 2026" back into
    * a Date, which silently emptied every Earnings period. */
   timestamp?: string;
+  /** True for a QR Ride / walk-in trip (booking_type = qr_walkin). */
+  isWalkIn?: boolean;
+  /** True for a Manual Ride recorded by the driver (booking_type = manual, no passenger account). */
+  isManual?: boolean;
   status: 'completed' | 'cancelled';
   paymentMethod: PaymentMethod;
   rating?: number | null;
@@ -216,4 +220,91 @@ export interface VerifiedOperatorData {
     make_model: string;
     toda_zone: string | null;
   } | null;
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// QR Ride / Walk-in Ride — shapes returned by /driver/qr-session/* (server-authoritative).
+// ---------------------------------------------------------------------------------------------
+
+export type QrPassengerStatus = 'accepted' | 'in_transit' | 'completed' | 'cancelled';
+
+export interface QrSessionPassenger {
+  booking_code: string;
+  status: QrPassengerStatus;
+  party_size: number;
+  pickup: { name: string; lat: number; lng: number };
+  dropoff: { name: string; lat: number; lng: number };
+  distance_km: number;
+  distance_source: 'osrm' | 'fallback' | null;
+  estimated_duration_mins: number;
+  fare_per_passenger: number;
+  fare_amount: number;
+  payment_method: string;
+  payment_status: string;
+  joined_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  cancelled_by: 'passenger' | 'driver' | 'system' | null;
+  /** 'qr' = joined with the Passenger app; 'walk_in' = added by the driver (Manual Ride, no account). */
+  source?: 'qr' | 'walk_in';
+  passenger_name?: string | null;
+}
+
+export interface QrSession {
+  session: {
+    session_code: string;
+    status: 'boarding' | 'in_progress' | 'completed' | 'cancelled';
+    capacity: number | null;
+    seats_used: number;
+    seats_remaining: number | null;
+    opened_at: string | null;
+    expires_at: string | null;
+    started_at: string | null;
+    ended_at: string | null;
+    end_reason: string | null;
+    total_fare: number;
+  };
+  passengers: QrSessionPassenger[];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Manual Ride — shapes returned by /driver/manual-ride/* (server-authoritative: pick-up, distance
+// and fare are always the server's).
+// ---------------------------------------------------------------------------------------------
+
+export interface ManualRideQuote {
+  quote: string;
+  expires_at: string;
+  party_size: number;
+  pickup: { lat: number; lng: number; source: 'driver_gps' };
+  dropoff_name: string;
+  distance_km: number;
+  distance_source: 'osrm' | 'fallback';
+  estimated_duration_mins: number;
+  fare_per_passenger: number;
+  fare_amount: number;
+  passenger_capacity: number | null;
+  /** Seats still free in the tricycle's open ride session before this party. */
+  seats_remaining?: number | null;
+}
+
+export interface ManualRide {
+  booking_code: string;
+  status: 'accepted' | 'in_transit' | 'completed' | 'cancelled';
+  party_size: number;
+  pickup: { name: string; lat: number; lng: number };
+  dropoff: { name: string; lat: number; lng: number };
+  distance_km: number;
+  distance_source: 'osrm' | 'fallback' | null;
+  estimated_duration_mins: number;
+  fare_per_passenger: number;
+  fare_amount: number;
+  payment_method: string;
+  payment_status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  dropped_off_recorded: boolean;
 }

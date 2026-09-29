@@ -310,6 +310,6 @@ const styles = StyleSheet.create({
   },
   termsLink: {
     color: COLORS.primary,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

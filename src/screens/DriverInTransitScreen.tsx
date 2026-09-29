@@ -7,7 +7,7 @@ import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { Phone, MessageSquare } from 'lucide-react-native';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
-import LocationPendingView from '../components/LocationPendingView';
+import MapLocationNotice from '../components/MapLocationNotice';
 import RideProgressStepper from '../components/RideProgressStepper';
 import Avatar from '../components/Avatar';
 import RouteTimeline from '../components/RouteTimeline';
@@ -61,9 +61,10 @@ export default function DriverInTransitScreen() {
   );
 
   if (!activeBooking) return null;
-  if (currentLat == null || currentLng == null) {
-    return <LocationPendingView isLocating={isLocatingDriver} error={locationError} onRetry={retryLocation} />;
-  }
+  // The map mounts immediately (tiles start loading) whether or not GPS has arrived; a small
+  // notice over it covers the wait/permission state instead of a full-screen blocker.
+  const driverLocation =
+    currentLat != null && currentLng != null ? { lat: currentLat, lng: currentLng, heading: headingDeg } : null;
   const booking = activeBooking;
 
   const hasPassengerPhone = !!booking.passengerMobile?.trim();
@@ -91,7 +92,7 @@ export default function DriverInTransitScreen() {
   return (
     <View style={styles.container}>
       <TrivoraDriverMap
-        driverLocation={{ lat: currentLat, lng: currentLng, heading: headingDeg }}
+        driverLocation={driverLocation}
         isOnline
         showCompass
         // Trip framing: pickup pin + full pickup -> destination route + destination pin, fitted as a
@@ -112,6 +113,9 @@ export default function DriverInTransitScreen() {
         bottomInset={sheetHeight}
         style={StyleSheet.absoluteFillObject}
       />
+      {!driverLocation && (
+        <MapLocationNotice isLocating={isLocatingDriver} error={locationError} onRetry={retryLocation} top={insets.top + 12 + topOverlayHeight + 8} />
+      )}
 
       {/* No header bar — one status message floating top-center, same as the Passenger app. */}
       <View style={[styles.topWrap, { top: insets.top + 12 }]} onLayout={handleTopLayout}>
@@ -139,7 +143,7 @@ export default function DriverInTransitScreen() {
             dropoff={{
               label: 'Destination',
               address: booking.dropoff,
-              meta: `${booking.distanceKm} km · ~6 min`,
+              meta: `${booking.distanceKm} km`,
             }}
           />
 

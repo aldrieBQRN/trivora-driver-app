@@ -193,13 +193,13 @@ const styles = StyleSheet.create({
   },
   rowTitle: {
     ...TYPOGRAPHY.body,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.textPrimary,
     flexShrink: 1,
   },
   rowFine: {
     ...TYPOGRAPHY.caption,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.dangerDark,
   },
   rowDesc: {

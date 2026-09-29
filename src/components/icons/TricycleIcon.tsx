@@ -22,7 +22,7 @@ interface TricycleIconProps {
  */
 export default function TricycleIcon({
   size = 24,
-  color = '#1B3A69',
+  color = '#1D2542',
   accentColor = '#3B82F6',
   roofColor,
   style,

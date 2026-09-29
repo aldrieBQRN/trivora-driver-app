@@ -16,7 +16,7 @@ const TONE_STYLES: Record<BadgeTone, { bg: string; text: string; border: string 
   warning: { bg: COLORS.amberLight, text: '#B45309', border: '#FDE68A' },
   danger: { bg: COLORS.dangerLight, text: COLORS.dangerDark, border: COLORS.dangerBorder },
   neutral: { bg: COLORS.surfaceInput, text: COLORS.textSecondary, border: COLORS.border },
-  brand: { bg: COLORS.primaryTint, text: COLORS.primary, border: 'rgba(27, 58, 105, 0.15)' },
+  brand: { bg: COLORS.primaryTint, text: COLORS.primary, border: 'rgba(29, 37, 66, 0.15)' },
 };
 
 /** Single pill/badge treatment shared by trip status, violation status, tracking-mode "active" tags, and payment chips. */
@@ -52,11 +52,11 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
   textSm: {
-    fontSize: 9,
+    fontSize: 10,
     letterSpacing: 0.4,
   },
 });

@@ -52,6 +52,10 @@ const HISTORY_REFRESH_POLL_MS = 5000;
 // distanceInterval on the native watch can never suppress the scheduled update. Transmission only:
 // UI screen refreshes are unrelated to this and cannot produce a GPS record.
 const GPS_TRANSMISSION_INTERVAL_MS = 5000;
+// Timer-drift allowance on the transmit-slot gate (claimTransmitSlot): a scheduled tick that
+// fires slightly before the 5s boundary still gets its slot. Small enough that two sends can
+// never land closer than 4.5s apart, so it cannot create a second transmitter or a duplicate.
+const TRANSMIT_SLOT_TOLERANCE_MS = 500;
 // How long the app can sit backgrounded before a resume is treated as needing an immediate
 // catch-up ping rather than just waiting for the next natural watcher tick — one interval's
 // worth of gap is the threshold, so the visible gap after resuming is bounded to roughly the
@@ -146,6 +150,22 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     if (!hasRestoredOnlineRef.current) return;
     AsyncStorage.setItem(IS_ONLINE_STORAGE_KEY, String(isOnline)).catch(() => {});
   }, [isOnline]);
+
+  // Logout is an explicit Offline: the backend sets drivers.is_online = false as part of logout,
+  // so the local shift state follows it — the next login starts Offline instead of showing
+  // "Online" while the server says Offline. Only on a real logged-in -> logged-out transition,
+  // never on the initial pre-restore render (driver is null then too).
+  const hadDriverRef = useRef(false);
+  useEffect(() => {
+    if (driver) {
+      hadDriverRef.current = true;
+      return;
+    }
+    if (!hadDriverRef.current) return;
+    hadDriverRef.current = false;
+    setIsOnlineState(false);
+    setIsAvailableState(false);
+  }, [driver]);
 
   // Startup/relaunch safety check. Ending a shift normally (tapping "Go Offline") already stops
   // background tracking cleanly via the watcher effect's own cleanup below — this effect exists
@@ -447,7 +467,11 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   const claimTransmitSlot = (): { at: number; previous: number } | null => {
     const now = Date.now();
     const previous = lastTransmitSlotRef.current;
-    if (now - previous < GPS_TRANSMISSION_INTERVAL_MS) return null;
+    // TRANSMIT_SLOT_TOLERANCE_MS: the slot is stamped when the claim runs (after an async storage
+    // read), while the 5s setInterval fires on its own schedule — so the next tick routinely
+    // lands a few ms-to-~hundreds of ms short of exactly 5000ms after the previous stamp. A strict
+    // `< 5000` rejected that tick and turned the cadence into alternating 5s/10s gaps.
+    if (now - previous < GPS_TRANSMISSION_INTERVAL_MS - TRANSMIT_SLOT_TOLERANCE_MS) return null;
     lastTransmitSlotRef.current = now;
     // Publish the claim to the one place the background task can read (it cannot see this ref).
     // Written at claim time rather than after the send: the window is consumed either way, and

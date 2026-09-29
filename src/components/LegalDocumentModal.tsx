@@ -103,7 +103,7 @@ const styles = StyleSheet.create({
   },
   sectionHeading: {
     ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.textPrimary,
     marginBottom: 6,
   },

@@ -92,6 +92,6 @@ const styles = StyleSheet.create({
   },
   labelActive: {
     color: COLORS.primary,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

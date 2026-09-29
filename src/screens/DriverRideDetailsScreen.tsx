@@ -116,16 +116,20 @@ export default function DriverRideDetailsScreen({ item, onBack }: DriverRideDeta
 
           {hasRouteCoords && (
             <View style={styles.mapBox}>
+              {/* Historical trip: framed on the stored pickup -> destination (+ route once
+                  fetched) via the map's trip mode — never on the driver's current location. */}
               <TrivoraDriverMap
-                driverLocation={{ lat: item.pickupLat as number, lng: item.pickupLng as number, heading: 0 }}
+                driverLocation={null}
+                showDriverMarker={false}
                 isOnline
                 showCompass={false}
                 target={{
-                  lat: item.dropoffLat as number,
-                  lng: item.dropoffLng as number,
-                  label: item.dropoff,
-                  kind: 'dropoff',
+                  lat: item.pickupLat as number,
+                  lng: item.pickupLng as number,
+                  label: item.pickup,
+                  kind: 'pickup',
                 }}
+                tripDropoff={{ lat: item.dropoffLat as number, lng: item.dropoffLng as number }}
                 routeCoordinates={routeCoordinates}
                 style={styles.mapFill}
               />

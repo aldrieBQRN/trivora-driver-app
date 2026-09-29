@@ -86,7 +86,7 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <EditableAvatar
-            name={driver?.name || 'Juan Dela Cruz'}
+            name={driver?.name || 'Driver'}
             imageUri={driver?.avatarUrl}
             size={60}
             tone="driver"
@@ -94,7 +94,7 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
           />
 
           <View style={styles.identityCol}>
-            <Text style={styles.driverName} numberOfLines={1}>{driver?.name || 'Juan Dela Cruz'}</Text>
+            <Text style={styles.driverName} numberOfLines={1}>{driver?.name || '—'}</Text>
             <StatusBadge
               label={isOnline ? 'Online' : 'Offline'}
               tone={isOnline ? 'success' : 'neutral'}
@@ -210,7 +210,7 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
         </View>
       )}
 
-      <Button label="Log Out" variant="danger" icon={LogOut} onPress={handleLogout} style={styles.logoutBtn} />
+      <Button label="Log Out" variant="dangerOutline" icon={LogOut} onPress={handleLogout} style={styles.logoutBtn} />
 
       <EditProfileModal
         visible={showEditModal}
@@ -295,7 +295,7 @@ const detailStyles = StyleSheet.create({
   },
   value: {
     ...TYPOGRAPHY.caption,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.textPrimary,
     flexShrink: 1,
     textAlign: 'right',

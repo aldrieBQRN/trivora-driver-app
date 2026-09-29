@@ -420,7 +420,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   compareValue: {
-    fontWeight: '800',
+    fontWeight: '700',
   },
   perfRow: {
     flexDirection: 'row',
@@ -490,6 +490,6 @@ const styles = StyleSheet.create({
   },
   trendDayLabelCurrent: {
     color: COLORS.primary,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

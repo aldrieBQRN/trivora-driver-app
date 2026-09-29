@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
   },
   verifiedValue: {
     ...TYPOGRAPHY.caption,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.textPrimary,
   },
   sectionTitle: {
@@ -336,7 +336,7 @@ const styles = StyleSheet.create({
   },
   personRole: {
     ...TYPOGRAPHY.body,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.textPrimary,
   },
   errorText: {
@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
   },
   personRowValue: {
     ...TYPOGRAPHY.bodySmall,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.textPrimary,
     textAlign: 'right',
     flexShrink: 1,

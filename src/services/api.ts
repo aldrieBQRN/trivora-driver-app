@@ -1,32 +1,25 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { DriverProfile, IncomingBooking, ViolationCitation } from '../types';
+import { DriverProfile, IncomingBooking, ViolationCitation, QrSession, QrSessionPassenger, ManualRide, ManualRideQuote } from '../types';
 
 function getDefaultApiBaseUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
   const isPlaceholder = Boolean(envUrl && envUrl.includes('your-ngrok-url'));
 
-  // Web runs on the local machine where Laravel is on port 8000; connect directly
-  // rather than routing through an external tunnel or LAN IP heuristic.
+  // Explicit override from .env takes priority on all platforms (web and mobile)
+  if (envUrl && !isPlaceholder) {
+    return envUrl;
+  }
+
+  // Web fallback when EXPO_PUBLIC_API_URL is not set
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.location) {
       const hostname = window.location.hostname;
-      if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return 'http://localhost:8000/api/v1';
-      }
-      if (hostname && (!envUrl || isPlaceholder)) {
+      if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
         return `http://${hostname}:8000/api/v1`;
       }
     }
-    if (envUrl && !isPlaceholder) {
-      return envUrl;
-    }
     return 'http://localhost:8000/api/v1';
-  }
-
-  // Explicit override (Render cloud host or real ngrok tunnel) takes priority on mobile
-  if (envUrl && !isPlaceholder) {
-    return envUrl;
   }
 
   // In Expo Go on physical device connected via LAN (not --tunnel), hostUri holds the
@@ -107,7 +100,12 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    if (response.status === 401 && !endpoint.includes('/login') && unauthorizedHandler) {
+    if (
+      response.status === 401 &&
+      !endpoint.includes('/login') &&
+      !endpoint.includes('/logout') &&
+      unauthorizedHandler
+    ) {
       unauthorizedHandler();
     }
     const errorMsg = (data && data.message) || `HTTP Error ${response.status}`;
@@ -296,6 +294,70 @@ export const driverApi = {
   removeProfilePhoto: async () => {
     return request('/driver/profile-photo', { method: 'DELETE' });
   },
+
+  // --- QR Ride / Walk-in Ride — the driver's own session only; every rule (ownership, franchise,
+  // ride state, the real GPS drop-off position) is enforced server-side. {booking} is the
+  // booking_code, never a database id. ---
+
+  qrSessionActive: async (): Promise<{ ride: QrSession | null }> => {
+    return request('/driver/qr-session/active');
+  },
+
+  qrSessionStart: async (): Promise<{ message: string; ride: QrSession }> => {
+    return request('/driver/qr-session/start', { method: 'POST' });
+  },
+
+  qrDropOff: async (bookingCode: string): Promise<{ message: string; booking: QrSessionPassenger; ride: QrSession }> => {
+    return request(`/driver/qr-session/passengers/${encodeURIComponent(bookingCode)}/drop-off`, { method: 'POST' });
+  },
+
+  qrRemovePassenger: async (bookingCode: string): Promise<{ message: string; booking: QrSessionPassenger; ride: QrSession }> => {
+    return request(`/driver/qr-session/passengers/${encodeURIComponent(bookingCode)}/remove`, { method: 'POST' });
+  },
+
+  qrSessionEnd: async (): Promise<{ message: string; ride: QrSession }> => {
+    return request('/driver/qr-session/end', { method: 'POST' });
+  },
+
+  // --- Manual Ride — a trip the driver records for a walk-in passenger with no app. The server
+  // sets the pick-up (the driver's own fresh GPS), distance and fare; the app sends only the
+  // destination and party size, then the signed quote exactly as returned. {booking} is the code. ---
+
+  manualRideQuote: async (
+    payload: {
+      party_size: number;
+      dropoff_name: string;
+      dropoff_lat: number;
+      dropoff_lng: number;
+    },
+    options?: { signal?: AbortSignal }
+  ): Promise<ManualRideQuote> => {
+    return request('/driver/manual-ride/quote', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal: options?.signal,
+    });
+  },
+
+  /** Adds the walk-in passenger to the tricycle's one open ride session (created if none). Retry-safe per quote. */
+  manualRideAdd: async (quote: string): Promise<{ message: string; booking: ManualRide; ride: QrSession }> => {
+    return request('/driver/manual-ride/add', { method: 'POST', body: JSON.stringify({ quote }) });
+  },
+
+  manualRideActive: async (): Promise<{ ride: ManualRide | null }> => {
+    return request('/driver/manual-ride/active');
+  },
+
+  manualRideComplete: async (bookingCode: string): Promise<{ message: string; ride: ManualRide }> => {
+    return request(`/driver/manual-ride/${encodeURIComponent(bookingCode)}/complete`, { method: 'POST' });
+  },
+
+  manualRideCancel: async (bookingCode: string, reason?: string): Promise<{ message: string; ride: ManualRide }> => {
+    return request(`/driver/manual-ride/${encodeURIComponent(bookingCode)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(reason ? { reason } : {}),
+    });
+  },
 };
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -362,7 +424,8 @@ export function mapBookingRecordToHistoryItem(raw: any) {
   return {
     id: raw.id,
     bookingCode: raw.booking_code,
-    passengerName: passengerUser.name || 'Passenger',
+    // A Manual Ride has no passenger account — shown as an anonymous walk-in, never a made-up name.
+    passengerName: raw.booking_type === 'manual' ? 'Walk-in passenger' : passengerUser.name || 'Passenger',
     passengerAvatarUrl: passengerUser.profile_photo_url || undefined,
     pickup: raw.pickup_name,
     dropoff: raw.dropoff_name,
@@ -375,6 +438,7 @@ export function mapBookingRecordToHistoryItem(raw: any) {
     fare: Number(raw.fare_amount ?? 0),
     passengerCount: Number(raw.passenger_count ?? 1),
     farePerPassenger: Number(raw.fare_per_passenger ?? raw.fare_amount ?? 0),
+    isManual: raw.booking_type === 'manual',
     date: dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
     time: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     timestamp: dateObj.toISOString(),
@@ -383,6 +447,7 @@ export function mapBookingRecordToHistoryItem(raw: any) {
     rating: raw.rating?.score != null ? Number(raw.rating.score) : null,
     ratingComment: raw.rating?.comment || null,
     ratingFeedbackTags: Array.isArray(raw.rating?.feedback_tags) ? raw.rating.feedback_tags : undefined,
+    isWalkIn: raw.booking_type === 'qr_walkin',
   };
 }
 

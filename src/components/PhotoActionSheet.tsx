@@ -117,7 +117,7 @@ const styles = StyleSheet.create({
   },
   cancelText: {
     ...TYPOGRAPHY.body,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.textSecondary,
   },
 });

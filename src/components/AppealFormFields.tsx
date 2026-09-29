@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   },
   photoPickerText: {
     ...TYPOGRAPHY.caption,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   photoPreviewBox: {
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
   },
   photoActionText: {
     ...TYPOGRAPHY.caption,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.primary,
   },
   photoHint: {

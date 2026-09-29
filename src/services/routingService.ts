@@ -189,3 +189,121 @@ export async function fetchRoute(
     return buildFallbackRoute(origin, destination);
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Place search (Manual Ride destination) — the same Nominatim search the Passenger app uses,
+// biased to the Nasugbu service area. Real places with real coordinates only: any failure resolves
+// an empty list, never an invented result.
+// ---------------------------------------------------------------------------------------------
+
+export interface PlaceSearchResult {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+}
+
+const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
+const NASUGBU_VIEWBOX = '120.55,14.01,120.72,14.13';
+
+export async function searchPlaces(query: string, opts?: { timeoutMs?: number; limit?: number }): Promise<PlaceSearchResult[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    q: trimmed,
+    countrycodes: 'ph',
+    viewbox: NASUGBU_VIEWBOX,
+    bounded: '0',
+    limit: String(opts?.limit ?? 6),
+  });
+
+  try {
+    const response = await fetchWithTimeout(`${NOMINATIM_SEARCH_URL}?${params.toString()}`, opts?.timeoutMs ?? 5000);
+    if (!response.ok) throw new Error(`Nominatim HTTP ${response.status}`);
+    const data = await response.json();
+    if (!Array.isArray(data)) return [];
+    return data
+      .map((item: any) => ({
+        name: item.name || String(item.display_name || '').split(',')[0],
+        address: item.display_name || '',
+        lat: Number(item.lat),
+        lng: Number(item.lon),
+      }))
+      .filter((p) => p.name && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  } catch {
+    return [];
+  }
+}
+
+const NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
+
+/**
+ * Readable name for a pinned point (the same Nominatim reverse lookup the Passenger app uses).
+ * Resolves null on any failure — the caller shows a plain "Selected location", never an invented
+ * address.
+ */
+export async function reverseGeocodePoint(
+  point: RouteCoordinate,
+  opts?: { timeoutMs?: number }
+): Promise<{ name: string; address: string } | null> {
+  if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return null;
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    lat: String(point.lat),
+    lon: String(point.lng),
+    zoom: '18',
+    addressdetails: '1',
+  });
+  try {
+    const response = await fetchWithTimeout(`${NOMINATIM_REVERSE_URL}?${params.toString()}`, opts?.timeoutMs ?? 5000);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (!data || data.error) return null;
+
+    const rawBarangay =
+      data.address?.quarter ||
+      data.address?.suburb ||
+      data.address?.village ||
+      data.address?.neighbourhood ||
+      data.address?.city_district;
+
+    let barangay: string | undefined;
+    if (rawBarangay) {
+      const lower = rawBarangay.toLowerCase();
+      if (lower.includes('bucana')) {
+        barangay = 'Barangay Bucana';
+      } else {
+        const numMatch = rawBarangay.match(/(?:barangay|brgy\.?)\s*(\d+)/i) || rawBarangay.match(/\b([1-9]|10)\b/);
+        if (numMatch) {
+          barangay = `Barangay ${numMatch[1]}`;
+        } else {
+          barangay = rawBarangay.startsWith('Barangay') || rawBarangay.startsWith('Brgy')
+            ? rawBarangay
+            : `Barangay ${rawBarangay}`;
+        }
+      }
+    }
+
+    const road = data.address?.road;
+    const houseNumber = data.address?.house_number;
+    let cleanAddress = '';
+    if (road) {
+      cleanAddress = `${houseNumber ? houseNumber + ' ' : ''}${road}, ${barangay || 'Nasugbu'}, Batangas`;
+    } else if (data.display_name) {
+      cleanAddress = data.display_name
+        .split(',')
+        .slice(0, 3)
+        .map((s: string) => s.trim())
+        .join(', ');
+    } else {
+      cleanAddress = `${barangay || 'Nasugbu'}, Batangas`;
+    }
+
+    const name = data.name || road || barangay || cleanAddress.split(',')[0];
+    return { name: name || cleanAddress, address: cleanAddress };
+  } catch {
+    return null;
+  }
+}

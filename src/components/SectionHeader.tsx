@@ -35,6 +35,6 @@ const styles = StyleSheet.create({
   action: {
     ...TYPOGRAPHY.caption,
     color: COLORS.primary,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

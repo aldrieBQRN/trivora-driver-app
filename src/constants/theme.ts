@@ -1,16 +1,16 @@
 /**
  * Trivora Driver Design System - Modern Native App Theme
- * Primary Brand: #1B3A69 | Dominant Clean White: #FFFFFF
+ * Primary Brand: #1D2542 | Dominant Clean White: #FFFFFF
  * Optimized for handlebar mount clarity, outdoor sunlight readability, and tactile operation
  */
 
 export const COLORS = {
-  // Primary Brand (#1B3A69)
-  primary: '#1B3A69',
-  primaryDark: '#122646',
-  primaryHover: '#152E54',
-  primaryLight: '#2A4D82',
-  primaryTint: '#EEF4FA',
+  // Shared Trivora brand navy (#1D2542) — same in the Passenger and Driver apps
+  primary: '#1D2542',
+  primaryDark: '#141A31',
+  primaryHover: '#283256',
+  primaryLight: '#4A5275',
+  primaryTint: '#EDEEF3',
 
   // Surfaces & Backgrounds
   background: '#FFFFFF',
@@ -22,7 +22,7 @@ export const COLORS = {
   // Hairline Borders
   border: '#E2E8F0',
   borderLight: '#F1F5F9',
-  borderFocus: '#1B3A69',
+  borderFocus: '#1D2542',
 
   // Typography
   textPrimary: '#0F172A',
@@ -53,9 +53,9 @@ export const COLORS = {
   sky: '#0284C7',
 
   // Dark hero surfaces (splash, incoming-booking backdrop, profile banner)
-  darkBackground: '#0D2040',
-  darkSurface: '#152B52',
-  darkSurfaceRaised: '#1E3A8A',
+  darkBackground: '#141A31',
+  darkSurface: '#1D2542',
+  darkSurfaceRaised: '#2A3358',
   darkBorder: 'rgba(255, 255, 255, 0.16)',
   darkTextPrimary: '#FFFFFF',
   darkTextSecondary: 'rgba(255, 255, 255, 0.72)',
@@ -123,24 +123,34 @@ export const BUTTONS = {
   touchHeightLg: 58,
 };
 
-/** Named type scale, shared across all screens instead of hand-rolled fontSize/fontWeight pairs. */
+/**
+ * Named type scale. Every screen should draw its text styles from here instead of hand-rolling
+ * fontSize/fontWeight pairs.
+ *
+ * Hierarchy rules (shared by the Passenger and Driver apps):
+ * - Three weights only: 400 (reading text), 600 (titles, labels, emphasis), 700 (page titles and
+ *   the one key value on a screen). Nothing heavier — Android renders 800/900 as Roboto Black,
+ *   which made every line on a screen shout at the same volume.
+ * - Nothing below 11px; 12px+ for anything a rider/driver must read at a glance.
+ * - Emphasise the value, not its label (e.g. "₱126.00" is bigger than "Total Fare").
+ */
 export const TYPOGRAPHY = {
   /** Reserved for the one dominant figure on a screen — a fare, a total, an amount due. Typography carries the hierarchy instead of a container. */
-  hero: { fontSize: 44, fontWeight: '900' as const, lineHeight: 48, letterSpacing: -0.8 },
-  display: { fontSize: 28, fontWeight: '900' as const, lineHeight: 34, letterSpacing: -0.3 },
-  h1: { fontSize: 22, fontWeight: '900' as const, lineHeight: 28, letterSpacing: -0.2 },
-  h2: { fontSize: 18, fontWeight: '800' as const, lineHeight: 24 },
-  h3: { fontSize: 16, fontWeight: '800' as const, lineHeight: 21 },
-  bodyLarge: { fontSize: 15, fontWeight: '700' as const, lineHeight: 20 },
-  body: { fontSize: 13, fontWeight: '600' as const, lineHeight: 18 },
-  bodySmall: { fontSize: 12, fontWeight: '500' as const, lineHeight: 16 },
-  caption: { fontSize: 11, fontWeight: '600' as const, lineHeight: 14 },
-  micro: { fontSize: 10, fontWeight: '700' as const, lineHeight: 13 },
+  hero: { fontSize: 44, fontWeight: '700' as const, lineHeight: 48, letterSpacing: -0.8 },
+  display: { fontSize: 28, fontWeight: '700' as const, lineHeight: 34, letterSpacing: -0.4 },
+  h1: { fontSize: 22, fontWeight: '700' as const, lineHeight: 28, letterSpacing: -0.2 },
+  h2: { fontSize: 18, fontWeight: '700' as const, lineHeight: 24 },
+  h3: { fontSize: 16, fontWeight: '600' as const, lineHeight: 22 },
+  bodyLarge: { fontSize: 15, fontWeight: '600' as const, lineHeight: 21 },
+  body: { fontSize: 14, fontWeight: '400' as const, lineHeight: 20 },
+  bodySmall: { fontSize: 13, fontWeight: '400' as const, lineHeight: 18 },
+  caption: { fontSize: 12, fontWeight: '500' as const, lineHeight: 16 },
+  micro: { fontSize: 11, fontWeight: '600' as const, lineHeight: 14 },
   label: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    lineHeight: 11,
-    letterSpacing: 0.6,
+    fontSize: 11,
+    fontWeight: '600' as const,
+    lineHeight: 14,
+    letterSpacing: 0.5,
     textTransform: 'uppercase' as const,
   },
 };

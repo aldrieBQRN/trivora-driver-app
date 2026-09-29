@@ -59,13 +59,29 @@ export function DriverAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const isLoggingOutRef = useRef<boolean>(false);
+
   const logout = () => {
-    driverApi.logout().catch(() => {});
+    if (isLoggingOutRef.current) return;
+    isLoggingOutRef.current = true;
+
+    const prevToken = tokenRef.current;
     setDriver(null);
     setIsAuthenticated(false);
     tokenRef.current = null;
     setAuthToken(null);
     AsyncStorage.removeItem(SESSION_STORAGE_KEY).catch(() => {});
+
+    if (prevToken) {
+      driverApi
+        .logout()
+        .catch(() => {})
+        .finally(() => {
+          isLoggingOutRef.current = false;
+        });
+    } else {
+      isLoggingOutRef.current = false;
+    }
   };
 
   useEffect(() => {

@@ -8,7 +8,7 @@ import Animated, {
 import type { LucideIcon } from 'lucide-react-native';
 import { BUTTONS, COLORS, RADIUS, SHADOWS, TYPOGRAPHY } from '../constants/theme';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'danger' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'danger' | 'dangerOutline' | 'ghost';
 export type ButtonSize = 'md' | 'lg';
 
 interface ButtonProps {
@@ -96,6 +96,12 @@ const VARIANT_STYLES: Record<ButtonVariant, { container: ViewStyle; text: { colo
     container: { backgroundColor: COLORS.dangerLight, borderWidth: 1, borderColor: COLORS.dangerBorder },
     text: { color: COLORS.danger },
   },
+  /** Destructive but routine (e.g. Log Out): red label only, neutral container — red stays
+   * reserved for the label that names the destructive action, not a whole red slab. */
+  dangerOutline: {
+    container: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: COLORS.border },
+    text: { color: COLORS.dangerDark },
+  },
   ghost: {
     container: { backgroundColor: 'transparent' },
     text: { color: COLORS.primary },
@@ -119,7 +125,7 @@ const styles = StyleSheet.create({
   },
   label: {
     ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 0.2,
   },
 });

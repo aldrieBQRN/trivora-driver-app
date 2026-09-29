@@ -7,7 +7,7 @@ import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { Phone, MessageSquare, X } from 'lucide-react-native';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
-import LocationPendingView from '../components/LocationPendingView';
+import MapLocationNotice from '../components/MapLocationNotice';
 import RideProgressStepper from '../components/RideProgressStepper';
 import Avatar from '../components/Avatar';
 import RouteTimeline from '../components/RouteTimeline';
@@ -61,9 +61,10 @@ export default function DriverEnRoutePickupScreen() {
   );
 
   if (!activeBooking) return null;
-  if (currentLat == null || currentLng == null) {
-    return <LocationPendingView isLocating={isLocatingDriver} error={locationError} onRetry={retryLocation} />;
-  }
+  // The map mounts immediately (tiles start loading) whether or not GPS has arrived; a small
+  // notice over it covers the wait/permission state instead of a full-screen blocker.
+  const driverLocation =
+    currentLat != null && currentLng != null ? { lat: currentLat, lng: currentLng, heading: headingDeg } : null;
   const booking = activeBooking;
 
   const hasPassengerPhone = !!booking.passengerMobile?.trim();
@@ -104,7 +105,7 @@ export default function DriverEnRoutePickupScreen() {
       {/* Full-bleed real map, same engine/style as Home — no header bar, just one status
           message floating top-center, same as the Passenger app's DriverEnRouteScreen. */}
       <TrivoraDriverMap
-        driverLocation={{ lat: currentLat, lng: currentLng, heading: headingDeg }}
+        driverLocation={driverLocation}
         isOnline
         showCompass
         target={
@@ -118,13 +119,18 @@ export default function DriverEnRoutePickupScreen() {
         bottomInset={sheetHeight}
         style={StyleSheet.absoluteFillObject}
       />
+      {!driverLocation && (
+        <MapLocationNotice isLocating={isLocatingDriver} error={locationError} onRetry={retryLocation} top={insets.top + 12 + topOverlayHeight + 8} />
+      )}
 
       <View style={[styles.topWrap, { top: insets.top + 12 }]} onLayout={handleTopLayout}>
         <RideStatusPill
           label={
             hasArrived
               ? `Arrived — waiting for ${booking.passengerName.split(' ')[0]}`
-              : `Heading to Pick-up · ${booking.pickupEtaMinutes ?? 3} min`
+              : booking.pickupEtaMinutes != null
+                ? `Heading to Pick-up · ${booking.pickupEtaMinutes} min`
+                : 'Heading to Pick-up'
           }
           tone={hasArrived ? 'success' : 'progress'}
         />
@@ -147,7 +153,10 @@ export default function DriverEnRoutePickupScreen() {
             pickup={{
               label: 'Pick-up',
               address: booking.pickup,
-              meta: `${booking.pickupDistanceKm ?? 1.2} km · ${booking.pickupEtaMinutes ?? 3} min`,
+              meta: [
+                booking.pickupDistanceKm != null ? `${booking.pickupDistanceKm} km` : null,
+                booking.pickupEtaMinutes != null ? `${booking.pickupEtaMinutes} min` : null,
+              ].filter(Boolean).join(' · ') || undefined,
             }}
           />
 

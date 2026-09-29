@@ -65,6 +65,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   text: {
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

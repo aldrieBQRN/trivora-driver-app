@@ -7,7 +7,7 @@ import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { MessageSquare } from 'lucide-react-native';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
-import LocationPendingView from '../components/LocationPendingView';
+import MapLocationNotice from '../components/MapLocationNotice';
 import SlideToAcceptSlider from '../components/SlideToAcceptSlider';
 import Avatar from '../components/Avatar';
 import RouteTimeline from '../components/RouteTimeline';
@@ -125,9 +125,10 @@ export default function DriverDispatchScreen() {
   };
 
   if (!incomingBooking) return null;
-  if (currentLat == null || currentLng == null) {
-    return <LocationPendingView isLocating={isLocatingDriver} error={locationError} onRetry={retryLocation} />;
-  }
+  // The map mounts immediately (tiles start loading) whether or not GPS has arrived; a small
+  // notice over it covers the wait/permission state instead of a full-screen blocker.
+  const driverLocation =
+    currentLat != null && currentLng != null ? { lat: currentLat, lng: currentLng, heading: headingDeg } : null;
   const booking = incomingBooking;
   const isUrgent = countdown <= 6;
 
@@ -135,7 +136,7 @@ export default function DriverDispatchScreen() {
     <View style={styles.container} onLayout={handleContainerLayout}>
       {/* Real map, same engine/style as Home — dimmed to keep the request the dominant moment */}
       <TrivoraDriverMap
-        driverLocation={{ lat: currentLat, lng: currentLng, heading: headingDeg }}
+        driverLocation={driverLocation}
         isOnline
         showCompass={false}
         target={
@@ -155,6 +156,9 @@ export default function DriverDispatchScreen() {
         bottomInset={bottomInset}
         style={StyleSheet.absoluteFillObject}
       />
+      {!driverLocation && (
+        <MapLocationNotice isLocating={isLocatingDriver} error={locationError} onRetry={retryLocation} top={topOverlayHeight + 8} />
+      )}
       <View style={styles.dimOverlay} pointerEvents="none" />
 
       <View
