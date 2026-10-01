@@ -1,12 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { MapContainer, TileLayer, Marker, Circle, Polyline, useMap, useMapEvents } from 'react-leaflet';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Compass, LocateFixed } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS } from '../constants/theme';
 import { TrivoraDriverMapProps } from './TrivoraDriverMap.types';
 import { haversineKm } from '../utils/geo';
+
+const TRICYCLE_MARKER_IMAGE = require('../../assets/images/tricycle-marker.webp');
+const tricycleUri: string =
+  typeof TRICYCLE_MARKER_IMAGE === 'string'
+    ? TRICYCLE_MARKER_IMAGE
+    : TRICYCLE_MARKER_IMAGE?.default || TRICYCLE_MARKER_IMAGE?.uri || String(TRICYCLE_MARKER_IMAGE);
 
 /** Mirrors the native map's re-frame threshold — see TrivoraDriverMap.native.tsx. */
 const REFRAME_THRESHOLD_KM = 0.12;
@@ -22,11 +28,13 @@ const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>';
 
-function driverIconHtml(heading: number, isOnline: boolean): string {
-  const borderColor = isOnline ? COLORS.primary : COLORS.textMuted;
+function driverIconHtml(heading: number, isOnline: boolean, uri: string): string {
+  const filter = isOnline
+    ? 'filter: drop-shadow(0 2px 5px rgba(0,0,0,0.35));'
+    : 'filter: grayscale(100%) opacity(0.55);';
   return `
-    <div style="width:36px;height:36px;border-radius:18px;background:#FFFFFF;border:2px solid ${borderColor};display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(15,23,42,0.35);transform:rotate(${heading}deg);">
-      <div style="width:11px;height:11px;border-radius:6px;background:${isOnline ? '#3B82F6' : COLORS.textMuted};"></div>
+    <div style="width:45px;height:30px;display:flex;align-items:center;justify-content:center;${filter}transform:rotate(${heading}deg);">
+      <img src="${uri}" alt="Tricycle" style="width:45px;height:30px;object-fit:contain;pointer-events:none;" />
     </div>
   `;
 }
@@ -286,10 +294,10 @@ export default function TrivoraDriverMapWeb({
   const driverIcon = useMemo(
     () =>
       L.divIcon({
-        html: driverIconHtml(roundedHeading, isOnline),
+        html: driverIconHtml(roundedHeading, isOnline, tricycleUri),
         className: 'trivora-driver-marker-icon',
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
+        iconSize: [45, 30],
+        iconAnchor: [22.5, 15],
       }),
     [roundedHeading, isOnline]
   );
@@ -346,19 +354,6 @@ export default function TrivoraDriverMapWeb({
           routeCoordinates={routeCoordinates}
           onUserMoved={handleUserMoved}
         />
-
-        {isOnline && !target && driverLocation && (
-          <Circle
-            center={[driverLocation.lat, driverLocation.lng]}
-            radius={150}
-            pathOptions={{
-              color: 'rgba(27, 58, 105, 0.25)',
-              fillColor: 'rgba(27, 58, 105, 0.10)',
-              fillOpacity: 1,
-              weight: 1,
-            }}
-          />
-        )}
 
         {routeCoordinates && routeCoordinates.length > 1 && (
           <Polyline

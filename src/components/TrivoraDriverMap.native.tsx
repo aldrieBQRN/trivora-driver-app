@@ -14,8 +14,8 @@ import { Compass, LocateFixed } from 'lucide-react-native';
 
 const PICKUP_PIN_IMAGE = require('../../assets/map/pin-pickup.png');
 const DESTINATION_PIN_IMAGE = require('../../assets/map/pin-destination.png');
+const TRICYCLE_MARKER_IMAGE = require('../../assets/images/tricycle-marker.webp');
 import { COLORS, SHADOWS } from '../constants/theme';
-import { TricycleIcon } from './icons';
 import { TrivoraDriverMapProps } from './TrivoraDriverMap.types';
 import { haversineKm } from '../utils/geo';
 
@@ -102,19 +102,6 @@ function boundsOf(points: { lat: number; lng: number }[]): LngLatBounds {
     north = c + MIN_SPAN / 2;
   }
   return [west, south, east, north];
-}
-
-/** Polygon approximating a circle of `radiusM` meters (MapLibre circle layers are sized in pixels;
- * this keeps the broadcast radius a real 150 m on the ground). */
-function circlePolygon(lat: number, lng: number, radiusM: number): GeoJSON.Feature<GeoJSON.Polygon> {
-  const ring: number[][] = [];
-  const dLat = radiusM / 111320;
-  const dLng = radiusM / (111320 * Math.cos((lat * Math.PI) / 180));
-  for (let i = 0; i <= 48; i++) {
-    const a = (i / 48) * 2 * Math.PI;
-    ring.push([lng + dLng * Math.cos(a), lat + dLat * Math.sin(a)]);
-  }
-  return { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } };
 }
 
 export default function TrivoraDriverMapNative({
@@ -434,15 +421,6 @@ export default function TrivoraDriverMapNative({
           } : undefined}
         />
 
-        {/* Live broadcast radius — visible only while online, communicating "the dispatch
-            system can see me" spatially rather than as a separate text label. */}
-        {isOnline && !target && driverLocation && (
-          <GeoJSONSource id="broadcast-radius" data={circlePolygon(driverLocation.lat, driverLocation.lng, 150)}>
-            <Layer id="broadcast-radius-fill" type="fill" paint={{ 'fill-color': 'rgba(27, 58, 105, 0.10)' }} />
-            <Layer id="broadcast-radius-line" type="line" paint={{ 'line-color': 'rgba(27, 58, 105, 0.25)', 'line-width': 1 }} />
-          </GeoJSONSource>
-        )}
-
         {/* Route: a style layer, so it draws above the CARTO raster and below the markers (which
             are native views on top of the map). */}
         {routeCoordinates && routeCoordinates.length > 1 && (
@@ -498,15 +476,14 @@ export default function TrivoraDriverMapNative({
           <Marker id="driver" lngLat={[driverLocation.lng, driverLocation.lat]} anchor="center">
             <View
               style={[
-                styles.trikeBubble,
-                !isOnline && styles.trikeBubbleOffline,
                 { transform: [{ rotate: `${driverLocation.heading || 0}deg` }] },
+                !isOnline && styles.markerOffline,
               ]}
             >
-              <TricycleIcon
-                size={20}
-                color={isOnline ? COLORS.primary : COLORS.textMuted}
-                accentColor={isOnline ? '#3B82F6' : COLORS.textMuted}
+              <Image
+                source={TRICYCLE_MARKER_IMAGE}
+                style={styles.tricycleMarker}
+                resizeMode="contain"
               />
             </View>
           </Marker>
@@ -541,19 +518,12 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  trikeBubble: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...SHADOWS.md,
+  tricycleMarker: {
+    width: 45,
+    height: 30,
   },
-  trikeBubbleOffline: {
-    borderColor: COLORS.textMuted,
+  markerOffline: {
+    opacity: 0.55,
   },
   focusButton: {
     position: 'absolute',
