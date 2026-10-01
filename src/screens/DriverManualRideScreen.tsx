@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, LayoutChangeEvent, Modal, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, CheckCircle2, ChevronRight, Minus, Plus, Satellite, SignalLow, AlertCircle, Search, MapPinned } from 'lucide-react-native';
+import { MapPin, CheckCircle2, ChevronRight, Minus, Plus, Satellite, SignalLow, AlertCircle, Search, MapPinned, Banknote, Smartphone } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useManualRide, toManualRideError, ManualRideError } from '../context/ManualRideContext';
 import { useQrSession } from '../context/QrSessionContext';
@@ -14,7 +14,9 @@ import ConfirmModal from '../components/ConfirmModal';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
 import DestinationSearchModal, { SelectedDestination } from '../components/DestinationSearchModal';
 import DestinationPinModal from '../components/DestinationPinModal';
-import { ManualRide, ManualRideQuote } from '../types';
+import DriverPaymentModal, { PassengerPaymentTarget } from '../components/DriverPaymentModal';
+import { ManualRide, ManualRideQuote, DriverGcashQrStatus, PaymentMethod } from '../types';
+import { driverApi } from '../services/api';
 
 const peso = (n: number | null | undefined) => `₱${Number(n || 0).toFixed(2)}`;
 
@@ -42,6 +44,8 @@ function ManualRideSetup() {
 
   const [destination, setDestination] = useState<SelectedDestination | null>(null);
   const [partySize, setPartySize] = useState(1);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [driverGcash, setDriverGcash] = useState<DriverGcashQrStatus | null>(null);
   const [showSearch, setShowSearch] = useState(false);
   const [showChooser, setShowChooser] = useState(false);
   const [showPin, setShowPin] = useState(false);
@@ -54,6 +58,12 @@ function ManualRideSetup() {
   const [seatsLeft, setSeatsLeft] = useState<number | null>(joiningSession ? joiningSession.seats_remaining : null);
   const requestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    driverApi.getGcashQr().then(setDriverGcash).catch(() => {});
+  }, []);
+
+  const hasDriverGcash = Boolean(driverGcash?.has_gcash_qr || driverGcash?.configured || driverGcash?.gcash_qr_url);
 
   const fetchQuote = async (targetDest?: SelectedDestination, targetParty?: number) => {
     const dest = targetDest ?? destination;
@@ -116,7 +126,7 @@ function ManualRideSetup() {
     setAddError(null);
     try {
       // On a dropped connection the same quote is simply sent again — the server adds it once.
-      await add(quote.quote);
+      await add(quote.quote, paymentMethod);
     } catch (err: any) {
       if (err?.message === 'busy') return;
       const error = toManualRideError(err, "Couldn't add the passenger.");
@@ -199,6 +209,53 @@ function ManualRideSetup() {
               <Plus size={16} color={COLORS.primary} />
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* Payment Method */}
+        <Text style={styles.sectionLabel}>Payment Method</Text>
+        <View style={styles.paymentMethodRow}>
+          <TouchableOpacity
+            style={[styles.paymentMethodCard, paymentMethod === 'cash' && styles.paymentMethodCardActive]}
+            onPress={() => setPaymentMethod('cash')}
+            activeOpacity={0.7}
+          >
+            <Banknote size={18} color={paymentMethod === 'cash' ? COLORS.primary : COLORS.textSecondary} />
+            <Text style={[styles.paymentMethodText, paymentMethod === 'cash' && styles.paymentMethodTextActive]}>
+              Cash
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.paymentMethodCard,
+              paymentMethod === 'gcash' && styles.paymentMethodCardActive,
+              !hasDriverGcash && styles.paymentMethodCardDisabled,
+            ]}
+            onPress={() => {
+              if (hasDriverGcash) setPaymentMethod('gcash');
+            }}
+            disabled={!hasDriverGcash}
+            activeOpacity={0.7}
+          >
+            <Smartphone
+              size={18}
+              color={!hasDriverGcash ? COLORS.textMuted : paymentMethod === 'gcash' ? COLORS.primary : COLORS.textSecondary}
+            />
+            <View>
+              <Text
+                style={[
+                  styles.paymentMethodText,
+                  paymentMethod === 'gcash' && styles.paymentMethodTextActive,
+                  !hasDriverGcash && styles.paymentMethodTextDisabled,
+                ]}
+              >
+                GCash
+              </Text>
+              {!hasDriverGcash && (
+                <Text style={styles.paymentMethodSubtext}>No QR configured</Text>
+              )}
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Fare — the server's quote, never editable */}
@@ -340,11 +397,29 @@ function ManualRideInProgress({ ride }: { ride: ManualRide }) {
     return driverLocation ? haversineKm(driverLocation, dest) : null;
   }, [route, driverLocation?.lat, driverLocation?.lng, dest.lat, dest.lng]);
 
+  const [paymentTarget, setPaymentTarget] = useState<PassengerPaymentTarget | null>(null);
+
   const onConfirm = async () => {
     const action = confirm;
     setConfirm(null);
-    if (action === 'complete') await complete();
-    if (action === 'cancel') await cancel();
+    if (!action) return;
+    if (action === 'cancel') {
+      await cancel();
+    } else if (action === 'complete') {
+      const ok = await complete();
+      if (ok) {
+        setPaymentTarget({
+          bookingId: ride.booking_code,
+          bookingCode: ride.booking_code,
+          passengerName: 'Walk-in Passenger',
+          fare: Number(ride.fare_amount || 0),
+          paymentMethod: ride.payment_method || 'cash',
+          paymentStatus: 'unpaid',
+          paymentReference: null,
+          source: 'walk_in',
+        });
+      }
+    }
   };
 
   return (
@@ -408,7 +483,7 @@ function ManualRideInProgress({ ride }: { ride: ManualRide }) {
           </View>
           <View style={styles.statDivider} />
           <View style={[styles.stat, styles.statEnd]}>
-            <Text style={styles.label}>Cash fare</Text>
+            <Text style={styles.label}>{ride.payment_method === 'gcash' ? 'GCash fare' : 'Cash fare'}</Text>
             <Text style={styles.statStrong}>{peso(ride.fare_amount)}</Text>
           </View>
         </View>
@@ -429,7 +504,7 @@ function ManualRideInProgress({ ride }: { ride: ManualRide }) {
         title={confirm === 'complete' ? 'Complete this ride?' : 'Cancel this ride?'}
         message={
           confirm === 'complete'
-            ? `Drop-off at ${dest.name}. Collect ${peso(ride.fare_amount)} in cash.`
+            ? `Drop-off at ${dest.name}. Fare: ${peso(ride.fare_amount)} (${ride.payment_method === 'gcash' ? 'GCash' : 'Cash'}). Payment collection follows drop-off.`
             : "The trip is recorded as cancelled and no fare is added to your earnings."
         }
         confirmLabel={confirm === 'complete' ? 'Complete Ride' : 'Cancel Ride'}
@@ -438,6 +513,19 @@ function ManualRideInProgress({ ride }: { ride: ManualRide }) {
         loading={!!busy}
         onConfirm={onConfirm}
         onCancel={() => setConfirm(null)}
+      />
+
+      <DriverPaymentModal
+        visible={paymentTarget !== null}
+        target={paymentTarget}
+        onClose={() => {
+          setPaymentTarget(null);
+          close();
+        }}
+        onSuccess={() => {
+          setPaymentTarget(null);
+          close();
+        }}
       />
     </View>
   );
@@ -521,4 +609,46 @@ const styles = StyleSheet.create({
   chooserCancelText: { ...TYPOGRAPHY.bodyLarge, color: COLORS.textSecondary },
   cancelLink: { alignSelf: 'center', minHeight: 36, justifyContent: 'center', marginTop: -SPACING.xs },
   cancelText: { ...TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.dangerDark },
+
+  // Payment method selection styles
+  paymentMethodRow: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    marginTop: 2,
+    marginBottom: SPACING.xs,
+  },
+  paymentMethodCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+  },
+  paymentMethodCardActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primaryTint,
+  },
+  paymentMethodCardDisabled: {
+    opacity: 0.5,
+    backgroundColor: COLORS.backgroundSubtle,
+  },
+  paymentMethodText: {
+    ...TYPOGRAPHY.body,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  paymentMethodTextActive: {
+    color: COLORS.primary,
+  },
+  paymentMethodTextDisabled: {
+    color: COLORS.textMuted,
+  },
+  paymentMethodSubtext: {
+    ...TYPOGRAPHY.micro,
+    color: COLORS.textMuted,
+  },
 });

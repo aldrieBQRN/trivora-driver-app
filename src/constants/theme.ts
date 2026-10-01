@@ -49,6 +49,7 @@ export const COLORS = {
   dangerBorder: '#FECACA',
   dangerSurface: 'rgba(239, 68, 68, 0.12)',
   amber: '#F59E0B',
+  amberDark: '#B45309',
   amberLight: '#FFFBEB',
   sky: '#0284C7',
 

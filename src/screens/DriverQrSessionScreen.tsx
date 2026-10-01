@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { MapPin, Users, WifiOff, CheckCircle2, Navigation, UserPlus } from 'lucide-react-native';
+import { MapPin, Users, WifiOff, CheckCircle2, Navigation, UserPlus, AlertCircle, Banknote, Smartphone, Clock, ChevronRight } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useQrSession } from '../context/QrSessionContext';
 import { useDriverShift } from '../context/DriverShiftContext';
@@ -9,6 +9,7 @@ import ScreenHeader from '../components/ScreenHeader';
 import Button from '../components/Button';
 import ConfirmModal from '../components/ConfirmModal';
 import QrPassengerRouteView from '../components/QrPassengerRouteView';
+import DriverPaymentModal, { PassengerPaymentTarget } from '../components/DriverPaymentModal';
 import { QrSessionPassenger } from '../types';
 
 interface DriverQrSessionScreenProps {
@@ -45,10 +46,11 @@ const sourceLabel = (p: QrSessionPassenger) => (p.source === 'walk_in' ? 'Walk-i
  * driver needs to deliver each trip. Everything reflects the server's session (QrSessionContext).
  */
 export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenProps) {
-  const { session, busy, startRide, dropOff, removePassenger, endRide } = useQrSession();
+  const { session, busy, startRide, dropOff, removePassenger, endRide, refresh, markPaid } = useQrSession();
   const { isOnline } = useDriverShift();
   const { open: openAddWalkIn } = useManualRide();
   const [pending, setPending] = useState<PendingAction>(null);
+  const [paymentTarget, setPaymentTarget] = useState<PassengerPaymentTarget | null>(null);
   // Booking code whose route is open full-screen (before or during the ride).
   const [routeFor, setRouteFor] = useState<string | null>(null);
 
@@ -56,7 +58,8 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
   const seated = passengers.filter((p) => p.status === 'accepted' || p.status === 'in_transit');
   const aboard = passengers.filter((p) => p.status === 'in_transit');
   const dropped = passengers.filter((p) => p.status === 'completed');
-  const collected = useMemo(() => dropped.reduce((sum, p) => sum + Number(p.fare_amount || 0), 0), [dropped]);
+  const paidPassengers = passengers.filter((p) => p.payment_status === 'paid');
+  const collected = useMemo(() => paidPassengers.reduce((sum, p) => sum + Number(p.fare_amount || 0), 0), [paidPassengers]);
   // Counted in seats (party sizes), the same unit as "3 / 4 seats" — not in bookings.
   const seatsOf = (list: QrSessionPassenger[]) => list.reduce((sum, p) => sum + Number(p.party_size || 0), 0);
 
@@ -75,6 +78,9 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
 
   const s = session.session;
   const isBoarding = s.status === 'boarding';
+  // The last drop-off completes the session; it stays here until every fare is in and End Ride.
+  const isComplete = s.status === 'completed';
+  const allPaid = passengers.every((p) => p.status !== 'completed' || p.payment_status === 'paid');
   const expiresAt = timeLabel(s.expires_at);
   // A walk-in can be added while boarding, online, and a seat is still free (the server re-checks).
   const canAddWalkIn = isBoarding && isOnline && (s.seats_remaining == null || s.seats_remaining > 0);
@@ -88,6 +94,18 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
       const ok = await dropOff(action.passenger.booking_code);
       // Dropped off from the route map — back to the passenger list.
       if (ok && routeFor === action.passenger.booking_code) setRouteFor(null);
+      if (ok) {
+        setPaymentTarget({
+          bookingId: action.passenger.booking_code,
+          bookingCode: action.passenger.booking_code,
+          passengerName: action.passenger.passenger_name || action.label,
+          fare: Number(action.passenger.fare_amount || 0),
+          paymentMethod: action.passenger.payment_method || 'cash',
+          paymentStatus: action.passenger.payment_status || 'unpaid',
+          paymentReference: action.passenger.payment_reference || null,
+          source: action.passenger.source,
+        });
+      }
     }
     setPending(null);
   };
@@ -107,7 +125,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
           : pending?.kind === 'remove'
           ? "They'll be taken off this ride and won't be charged."
           : pending?.kind === 'dropoff'
-          ? `At ${pending.passenger.dropoff.name}. Collect ${peso(pending.passenger.fare_amount)} in cash.`
+          ? `At ${pending.passenger.dropoff.name}. Fare: ${peso(pending.passenger.fare_amount)} (${pending.passenger.payment_method === 'gcash' ? 'GCash' : 'Cash'}). Payment collection follows drop-off.`
           : ''
       }
       confirmLabel={pending?.kind === 'start' ? 'Start Ride' : pending?.kind === 'remove' ? 'Remove' : 'Drop Off'}
@@ -142,7 +160,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
     <View style={styles.container}>
       <ScreenHeader
         title="Ride Session"
-        subtitle={isBoarding ? 'Waiting to start' : 'Ride in progress'}
+        subtitle={isBoarding ? 'Waiting to start' : isComplete ? 'All passengers dropped off' : 'Ride in progress'}
         onBack={onBack}
       />
 
@@ -152,7 +170,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
           <View style={styles.eyebrowRow}>
             <View style={[styles.stateDot, !isBoarding && styles.stateDotActive]} />
             <Text style={[styles.eyebrow, !isBoarding && styles.eyebrowActive]}>
-              {isBoarding ? 'Boarding' : 'Ride in progress'}
+              {isBoarding ? 'Boarding' : isComplete ? 'Ride complete' : 'Ride in progress'}
             </Text>
           </View>
           <Text style={styles.seats}>
@@ -172,6 +190,8 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
           <Text style={styles.summaryText}>
             {isBoarding
               ? `Passengers can still join by scanning your QR, or add a walk-in passenger.${expiresAt ? ` Start by ${expiresAt} or this ride is cancelled.` : ''}`
+              : isComplete
+              ? 'Everyone has been dropped off. End the ride once every fare is collected.'
               : 'No one else can join. Drop each passenger off at their destination.'}
           </Text>
 
@@ -230,6 +250,48 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
                   </View>
                 </View>
 
+                {isDone && (
+                  <View style={styles.paymentActionRow}>
+                    {p.payment_status === 'paid' ? (
+                      <View style={styles.paidBadge}>
+                        <CheckCircle2 size={13} color={COLORS.success} />
+                        <Text style={styles.paidBadgeText}>
+                          Paid ({p.payment_method === 'gcash' ? 'GCash' : 'Cash'})
+                        </Text>
+                      </View>
+                    ) : (
+                      // Payment opens right after drop-off; if that page was closed early,
+                      // "Open payment" reopens it.
+                      <View style={styles.pendingPayment}>
+                        <View style={styles.pendingStatus}>
+                          <Clock size={13} color={COLORS.amberDark} />
+                          <Text style={styles.pendingPaymentText}>Payment pending</Text>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.openPaymentLink}
+                          onPress={() =>
+                            setPaymentTarget({
+                              bookingId: p.booking_code,
+                              bookingCode: p.booking_code,
+                              passengerName: p.passenger_name || label,
+                              fare: Number(p.fare_amount || 0),
+                              paymentMethod: p.payment_method || 'cash',
+                              paymentStatus: p.payment_status || 'unpaid',
+                              paymentReference: p.payment_reference || null,
+                              source: p.source,
+                            })
+                          }
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Open payment for ${label}`}
+                        >
+                          <Text style={styles.openPaymentText}>Open payment</Text>
+                          <ChevronRight size={14} color={COLORS.primary} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                )}
                 {p.status === 'accepted' && isBoarding && (
                   <View style={styles.linkRow}>
                     <TouchableOpacity
@@ -340,11 +402,34 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
             </View>
           </View>
         ) : (
-          <Button label="End Ride" variant="secondary" onPress={endRide} loading={busy === 'end'} />
+          <View style={styles.endRideBlock}>
+            {!allPaid ? (
+              <View style={styles.unsettledBanner}>
+                <AlertCircle size={14} color={COLORS.amberDark} />
+                <Text style={styles.unsettledText}>Collect all fares before ending the ride.</Text>
+              </View>
+            ) : null}
+            <Button
+              label="End Ride"
+              onPress={endRide}
+              loading={busy === 'end'}
+              disabled={!allPaid || !!busy}
+            />
+          </View>
         )}
       </View>
 
       {confirmModal}
+
+      <DriverPaymentModal
+        visible={paymentTarget !== null}
+        target={paymentTarget}
+        onClose={() => setPaymentTarget(null)}
+        onSuccess={(bookingCode) => {
+          markPaid(bookingCode);
+          refresh();
+        }}
+      />
     </View>
   );
 }
@@ -437,4 +522,82 @@ const styles = StyleSheet.create({
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: SPACING.sm, paddingHorizontal: SPACING.xl },
   emptyTitle: { ...TYPOGRAPHY.h3, color: COLORS.textPrimary },
   emptyBody: { ...TYPOGRAPHY.bodySmall, color: COLORS.textSecondary, textAlign: 'center', paddingVertical: SPACING.md },
+
+  // Payment row styles
+  paymentActionRow: {
+    paddingLeft: 42,
+    marginTop: 2,
+  },
+  paidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.successLight,
+    alignSelf: 'flex-start',
+  },
+  paidBadgeText: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '600',
+    color: COLORS.success,
+  },
+  paymentSubmittedBtn: {
+    paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: 5,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.amberLight,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: COLORS.amber,
+  },
+  paymentSubmittedBtnText: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700',
+    color: COLORS.amberDark,
+  },
+  pendingPayment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  pendingStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pendingPaymentText: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '600',
+    color: COLORS.amberDark,
+  },
+  openPaymentLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  openPaymentText: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  endRideBlock: {
+    gap: SPACING.xs,
+  },
+  unsettledBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    padding: SPACING.xs + 2,
+    backgroundColor: COLORS.amberLight,
+    borderRadius: RADIUS.sm,
+    marginBottom: 4,
+  },
+  unsettledText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.amberDark,
+    fontWeight: '500',
+  },
 });
