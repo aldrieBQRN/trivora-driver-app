@@ -17,12 +17,15 @@ import {
   Star,
   MapPin,
   Pencil,
+  QrCode,
 } from 'lucide-react-native';
 import EditableAvatar from '../components/EditableAvatar';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmModal from '../components/ConfirmModal';
+import DriverGcashSettingsModal from '../components/DriverGcashSettingsModal';
+import { driverApi } from '../services/api';
 
 interface DriverProfileScreenProps {
   onOpenTrackingSettings: () => void;
@@ -45,6 +48,8 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
   const [expanded, setExpanded] = useState<ExpandableSection>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showGcashModal, setShowGcashModal] = useState(false);
+  const [gcashStatus, setGcashStatus] = useState<any>(null);
 
   // Same reasoning as the Passenger app's Profile screen: this screen only exists in the tree
   // while its tab is selected (App.tsx's state machine unmounts it otherwise), so mounting here
@@ -54,6 +59,7 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
   // DriverShiftContext's own historyList poll, independent of this screen being open.
   useEffect(() => {
     refreshProfile();
+    driverApi.getGcashQr().then(setGcashStatus).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -183,6 +189,20 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
         onPress={onOpenTrackingSettings}
       />
 
+      {/* Payments */}
+      <Text style={styles.groupLabel}>PAYMENTS</Text>
+
+      <MenuRow
+        icon={QrCode}
+        label="GCash QR & Settings"
+        subtitle={
+          gcashStatus?.has_gcash_qr || gcashStatus?.configured || gcashStatus?.gcash_qr_url
+            ? 'Configured'
+            : 'Not Configured (Cash Only)'
+        }
+        onPress={() => setShowGcashModal(true)}
+      />
+
       {/* Support */}
       <Text style={styles.groupLabel}>SUPPORT</Text>
 
@@ -217,6 +237,12 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
         onClose={() => setShowEditModal(false)}
         driver={driver}
         onSave={handleSaveProfile}
+      />
+
+      <DriverGcashSettingsModal
+        visible={showGcashModal}
+        onClose={() => setShowGcashModal(false)}
+        onUpdated={(status) => setGcashStatus(status)}
       />
 
       <ConfirmModal

@@ -29,6 +29,8 @@ interface QrSessionContextType {
   refresh: () => Promise<void>;
   /** Take a session the server just returned from another action (a walk-in added via Manual Ride). */
   adopt: (next: QrSession) => void;
+  /** Record a payment the server just confirmed, so the kept (completed) session shows it as paid. */
+  markPaid: (bookingCode: string) => void;
 }
 
 const QrSessionContext = createContext<QrSessionContextType | null>(null);
@@ -52,6 +54,10 @@ export function QrSessionProvider({ children }: { children: React.ReactNode }) {
   // "a passenger left".
   const ownActionsRef = useRef<Set<string>>(new Set());
   const knownRef = useRef<Map<string, string> | null>(null);
+  // The last drop-off completes the session server-side, but the driver stays on Ride Session to
+  // collect payment and then taps End Ride — so a completed session is kept until End Ride.
+  const sessionRef = useRef<QrSession | null>(null);
+  sessionRef.current = session;
 
   /** Announces joins/leaves by comparing the passenger list with the previous server read. */
   const applySession = useCallback((next: QrSession | null, announce = true) => {
@@ -75,7 +81,11 @@ export function QrSessionProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const res = await driverApi.qrSessionActive();
-      applySession(res?.ride ?? null);
+      const next = res?.ride ?? null;
+      // Once every fare is collected the server stops returning the completed session; keep it
+      // on screen until the driver ends it.
+      if (!next && sessionRef.current?.session.status === 'completed') return;
+      applySession(next);
     } catch {
       // Transient — the next poll tries again.
     }
@@ -105,8 +115,10 @@ export function QrSessionProvider({ children }: { children: React.ReactNode }) {
     setBusy(key);
     try {
       const res = await action();
-      // A completed/cancelled session is over — the driver is back to normal dispatch.
-      const next = res?.ride && ['boarding', 'in_progress'].includes(res.ride.session.status) ? res.ride : null;
+      // A cancelled session, or one the driver ended, is over — back to normal dispatch. One the
+      // last drop-off completed stays open for payment collection until End Ride.
+      const keep = key === 'end' ? ['boarding', 'in_progress'] : ['boarding', 'in_progress', 'completed'];
+      const next = res?.ride && keep.includes(res.ride.session.status) ? res.ride : null;
       applySession(next, false);
       return true;
     } catch (err: any) {
@@ -148,8 +160,15 @@ export function QrSessionProvider({ children }: { children: React.ReactNode }) {
 
   const adopt = useCallback((next: QrSession) => applySession(next, false), [applySession]);
 
+  const markPaid = useCallback((bookingCode: string) => {
+    setSession((prev) => prev && {
+      ...prev,
+      passengers: prev.passengers.map((p) => (p.booking_code === bookingCode ? { ...p, payment_status: 'paid' } : p)),
+    });
+  }, []);
+
   return (
-    <QrSessionContext.Provider value={{ session, busy, startRide, dropOff, removePassenger, endRide, refresh, adopt }}>
+    <QrSessionContext.Provider value={{ session, busy, startRide, dropOff, removePassenger, endRide, refresh, adopt, markPaid }}>
       {children}
     </QrSessionContext.Provider>
   );

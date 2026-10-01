@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { DriverProfile, IncomingBooking, ViolationCitation, QrSession, QrSessionPassenger, ManualRide, ManualRideQuote } from '../types';
+import { DriverProfile, IncomingBooking, ViolationCitation, QrSession, QrSessionPassenger, ManualRide, ManualRideQuote, DriverGcashQrStatus, PaymentStatus } from '../types';
 
 function getDefaultApiBaseUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
@@ -340,8 +340,11 @@ export const driverApi = {
   },
 
   /** Adds the walk-in passenger to the tricycle's one open ride session (created if none). Retry-safe per quote. */
-  manualRideAdd: async (quote: string): Promise<{ message: string; booking: ManualRide; ride: QrSession }> => {
-    return request('/driver/manual-ride/add', { method: 'POST', body: JSON.stringify({ quote }) });
+  manualRideAdd: async (quote: string, paymentMethod?: string): Promise<{ message: string; booking: ManualRide; ride: QrSession }> => {
+    return request('/driver/manual-ride/add', {
+      method: 'POST',
+      body: JSON.stringify({ quote, payment_method: paymentMethod || 'cash' }),
+    });
   },
 
   manualRideActive: async (): Promise<{ ride: ManualRide | null }> => {
@@ -356,6 +359,67 @@ export const driverApi = {
     return request(`/driver/manual-ride/${encodeURIComponent(bookingCode)}/cancel`, {
       method: 'POST',
       body: JSON.stringify(reason ? { reason } : {}),
+    });
+  },
+
+  // --- Driver GCash QR Management ---
+  getGcashQr: async (): Promise<DriverGcashQrStatus> => {
+    return request('/driver/gcash-qr');
+  },
+
+  uploadGcashQr: async (
+    qrFile?: { uri: string; name: string; type: string } | null,
+    gcashName?: string,
+    gcashNumber?: string
+  ): Promise<{ message: string; driver: DriverGcashQrStatus }> => {
+    const form = new FormData();
+    if (qrFile) {
+      await appendFileToFormData(form, 'qr_image', qrFile);
+    }
+    if (gcashName !== undefined) {
+      form.append('gcash_name', gcashName);
+    }
+    if (gcashNumber !== undefined) {
+      form.append('gcash_number', gcashNumber);
+    }
+    return request('/driver/gcash-qr', {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  removeGcashQr: async (): Promise<{ message: string }> => {
+    return request('/driver/gcash-qr', { method: 'DELETE' });
+  },
+
+  // --- Booking Payment Settlements ---
+  confirmCashPayment: async (
+    bookingId: number | string,
+    amountReceived: number
+  ): Promise<{ message: string; booking: any }> => {
+    return request(`/driver/bookings/${encodeURIComponent(String(bookingId))}/payment/confirm-cash`, {
+      method: 'POST',
+      body: JSON.stringify({ amount_received: amountReceived }),
+    });
+  },
+
+  confirmGcashPayment: async (
+    bookingId: number | string,
+    referenceNumber: string
+  ): Promise<{ message: string; booking: any }> => {
+    return request(`/driver/bookings/${encodeURIComponent(String(bookingId))}/payment/confirm-gcash`, {
+      method: 'POST',
+      body: JSON.stringify({ reference_number: referenceNumber }),
+    });
+  },
+
+  recordManualGcashPayment: async (
+    bookingId: number | string,
+    referenceNumber: string
+  ): Promise<{ message: string; booking: any }> => {
+    return request(`/driver/bookings/${encodeURIComponent(String(bookingId))}/payment/manual-gcash`, {
+      method: 'POST',
+      body: JSON.stringify({ reference_number: referenceNumber }),
     });
   },
 };
@@ -410,6 +474,11 @@ export function mapBookingRecordToIncoming(
     todaZoneName: raw.toda_zone?.name || 'General Service',
     rating: Number(passenger.rating ?? 5.0),
     paymentMethod: raw.payment_method === 'gcash' ? 'gcash' : 'cash',
+    paymentStatus: (raw.payment_status as PaymentStatus) || 'unpaid',
+    paymentReference: raw.payment_reference || null,
+    paymentAmountReceived: raw.payment_amount_received != null ? Number(raw.payment_amount_received) : null,
+    paymentChangeAmount: raw.payment_change_amount != null ? Number(raw.payment_change_amount) : null,
+    paidAt: raw.paid_at || null,
     passengerNotes: raw.passenger_notes || null,
     dispatchedAt: raw.dispatched_at || null,
   };

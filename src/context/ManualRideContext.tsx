@@ -33,7 +33,7 @@ interface ManualRideContextType {
     options?: { signal?: AbortSignal }
   ) => Promise<ManualRideQuote>;
   /** Add the walk-in passenger (signed quote) to the tricycle's ride session. */
-  add: (signedQuote: string) => Promise<void>;
+  add: (signedQuote: string, paymentMethod?: string) => Promise<void>;
   complete: () => Promise<boolean>;
   cancel: (reason?: string) => Promise<boolean>;
   /** 'add' | 'complete' | 'cancel' while a request is running. */
@@ -105,9 +105,9 @@ export function ManualRideProvider({ children }: { children: React.ReactNode }) 
   // hands the session to QrSessionContext, whose screen then runs Start / Drop Off for everyone.
   // A retry after a dropped connection re-sends the same quote, which the server recognises, so
   // the passenger is never added twice.
-  const add = useCallback(async (signedQuote: string) => {
+  const add = useCallback(async (signedQuote: string, paymentMethod?: string) => {
     await run('add', async () => {
-      const res = await driverApi.manualRideAdd(signedQuote);
+      const res = await driverApi.manualRideAdd(signedQuote, paymentMethod);
       adoptSession(res.ride);
       setIsOpen(false);
       showToast('Walk-in passenger added.');

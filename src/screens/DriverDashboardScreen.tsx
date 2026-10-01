@@ -193,7 +193,7 @@ export default function DriverDashboardScreen({
           <Users size={16} color={COLORS.textInverse} />
           <Text style={styles.qrBarText} numberOfLines={1}>
             Ride session · {qrSession.session.seats_used}/{qrSession.session.capacity ?? '—'}{' '}
-            {qrSession.session.status === 'boarding' ? 'waiting to start' : 'in progress'}
+            {qrSession.session.status === 'boarding' ? 'waiting to start' : qrSession.session.status === 'completed' ? 'ready to end' : 'in progress'}
           </Text>
           <ChevronRight size={16} color={COLORS.textInverse} />
         </TouchableOpacity>

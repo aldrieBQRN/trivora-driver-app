@@ -51,6 +51,15 @@ export interface DriverProfile {
 }
 
 export type PaymentMethod = 'cash' | 'gcash';
+export type PaymentStatus = 'unpaid' | 'payment_submitted' | 'paid';
+
+export interface DriverGcashQrStatus {
+  has_gcash_qr: boolean;
+  configured?: boolean;
+  gcash_qr_url: string | null;
+  gcash_name: string | null;
+  gcash_number: string | null;
+}
 
 export interface ViolationAppeal {
   id: number;
@@ -105,6 +114,11 @@ export interface IncomingBooking {
   todaZoneName: string;
   rating: number;
   paymentMethod?: PaymentMethod;
+  paymentStatus?: PaymentStatus;
+  paymentReference?: string | null;
+  paymentAmountReceived?: number | null;
+  paymentChangeAmount?: number | null;
+  paidAt?: string | null;
   /** The passenger's optional note left at booking time (e.g. "waiting near blue gate") —
    * null/undefined when they left it blank. */
   passengerNotes?: string | null;
@@ -241,7 +255,11 @@ export interface QrSessionPassenger {
   fare_per_passenger: number;
   fare_amount: number;
   payment_method: string;
-  payment_status: string;
+  payment_status: PaymentStatus | string;
+  payment_reference?: string | null;
+  payment_amount_received?: number | null;
+  payment_change_amount?: number | null;
+  paid_at?: string | null;
   joined_at: string | null;
   started_at: string | null;
   completed_at: string | null;
@@ -302,7 +320,11 @@ export interface ManualRide {
   fare_per_passenger: number;
   fare_amount: number;
   payment_method: string;
-  payment_status: string;
+  payment_status: PaymentStatus | string;
+  payment_reference?: string | null;
+  payment_amount_received?: number | null;
+  payment_change_amount?: number | null;
+  paid_at?: string | null;
   started_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
