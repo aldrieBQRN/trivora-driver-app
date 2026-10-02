@@ -27,6 +27,16 @@ export interface TricycleUnit {
   passengerCapacity?: number | null;
 }
 
+export interface NearbyPlace {
+  id: string;
+  name: string;
+  category: string;
+  category_label?: string;
+  latitude: number;
+  longitude: number;
+  address?: string;
+}
+
 export interface DriverQrCodeData {
   unit_code: string;
   sticker_number: string | null;

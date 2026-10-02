@@ -174,7 +174,7 @@ export default function DestinationPinModal({ visible, onClose, onConfirm, initi
             <Text style={styles.title}>Pin the destination</Text>
             <View style={styles.hintRow}>
               <Hand size={13} color={COLORS.textSecondary} />
-              <Text style={styles.hint}>Tap the map where the passenger is going</Text>
+              <Text style={styles.hint}>Tap the map to place the destination pin</Text>
             </View>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close map">

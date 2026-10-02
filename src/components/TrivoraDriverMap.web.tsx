@@ -221,6 +221,7 @@ export default function TrivoraDriverMapWeb({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+
   // Update onMapPress click handler
   useEffect(() => {
     const map = mapRef.current;
