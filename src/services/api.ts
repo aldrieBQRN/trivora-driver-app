@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { DriverProfile, IncomingBooking, ViolationCitation, QrSession, QrSessionPassenger, ManualRide, ManualRideQuote, DriverGcashQrStatus, PaymentStatus, DriverQrCodeData } from '../types';
+import { DriverProfile, IncomingBooking, ViolationCitation, QrSession, QrSessionPassenger, ManualRide, ManualRideQuote, DriverGcashQrStatus, PaymentStatus, DriverQrCodeData, NearbyPlace } from '../types';
 
 function getDefaultApiBaseUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
@@ -606,4 +606,36 @@ export function mapViolationRecordToCitation(raw: any): ViolationCitation {
         }
       : null,
   };
+}
+
+export interface NearbyPlacesResponse {
+  status: string;
+  data: NearbyPlace[];
+  meta?: {
+    center?: { latitude: number; longitude: number };
+    radius?: number;
+    category?: string;
+    attribution?: string;
+  };
+}
+
+export async function fetchNearbyPlaces(params: {
+  latitude: number;
+  longitude: number;
+  radius?: number;
+  category?: string;
+}): Promise<NearbyPlace[]> {
+  try {
+    const qs = new URLSearchParams({
+      latitude: params.latitude.toString(),
+      longitude: params.longitude.toString(),
+      radius: (params.radius || 2000).toString(),
+      category: params.category || 'all',
+    });
+    const res = await request<NearbyPlacesResponse>(`/places/nearby?${qs.toString()}`);
+    return res && Array.isArray(res.data) ? res.data : [];
+  } catch (err) {
+    console.warn('[NearbyPlaces] Failed to fetch nearby places:', err);
+    return [];
+  }
 }
