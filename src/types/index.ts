@@ -185,6 +185,10 @@ export interface RideHistoryItem {
   isManual?: boolean;
   status: 'completed' | 'cancelled';
   paymentMethod: PaymentMethod;
+  /** Earnings are credited only once the driver confirms payment — 'paid' or not. */
+  paymentStatus?: string;
+  /** GCash reference the driver recorded, when paid by GCash. */
+  paymentReference?: string | null;
   rating?: number | null;
   ratingComment?: string | null;
   ratingFeedbackTags?: string[];

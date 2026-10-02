@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, LayoutChangeEvent } from 'react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { RideHistoryItem } from '../types';
@@ -30,7 +30,12 @@ const PERIOD_OPTIONS = [
 ];
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const TREND_BAR_MAX_HEIGHT = 56;
+/** Bar height bounds: the chart grows into whatever space is left on screen (no empty band under
+ * it), but never below the old fixed height nor taller than reads well. */
+const TREND_BAR_MIN_HEIGHT = 56;
+const TREND_BAR_CAP_HEIGHT = 220;
+/** Value label + label row + gaps around each bar, subtracted from the measured chart height. */
+const TREND_COL_CHROME = 13 + 4 + 18 + 4;
 
 // Real ride records already carry a completion time (e.g. "09:41 AM"), so today's rides can be
 // grouped into the same four day-parts a driver naturally thinks in, instead of 24 mostly-empty
@@ -225,6 +230,13 @@ export default function DriverEarningsScreen() {
   const trendMax = Math.max(1, ...trendData.map((d) => d.total));
   const showTrend = trendData.length > 0 && trendData.some((d) => d.total > 0);
 
+  const [chartHeight, setChartHeight] = useState(0);
+  const handleChartLayout = (e: LayoutChangeEvent) => setChartHeight(e.nativeEvent.layout.height);
+  const barMaxHeight = Math.min(
+    TREND_BAR_CAP_HEIGHT,
+    Math.max(TREND_BAR_MIN_HEIGHT, chartHeight - TREND_COL_CHROME - SPACING.md * 2),
+  );
+
   return (
     <View style={styles.container}>
       <ScreenHeader title="Earnings" />
@@ -307,17 +319,20 @@ export default function DriverEarningsScreen() {
                   </View>
 
                   {showTrend && (
-                    <View>
+                    <View style={styles.trendSection}>
                       <SectionHeader title={trendTitle} />
-                      <View style={styles.trendChart}>
+                      {/* The panel's height comes only from the space left on screen; the bars sit in
+                          an absolutely-positioned layer, so their height can't feed back into it. */}
+                      <View style={styles.trendChart} onLayout={handleChartLayout}>
+                        <View style={styles.trendBars}>
                         {trendData.map((bucket, index) => (
                           <View key={index} style={styles.trendCol}>
                             <Text style={styles.trendValue}>{bucket.total > 0 ? Math.round(bucket.total) : ''}</Text>
-                            <View style={styles.trendTrack}>
+                            <View style={[styles.trendTrack, { height: barMaxHeight }]}>
                               <View
                                 style={[
                                   styles.trendBar,
-                                  { height: Math.max(3, (bucket.total / trendMax) * TREND_BAR_MAX_HEIGHT) },
+                                  { height: Math.max(3, (bucket.total / trendMax) * barMaxHeight) },
                                   bucket.isCurrent && styles.trendBarCurrent,
                                 ]}
                               />
@@ -327,6 +342,7 @@ export default function DriverEarningsScreen() {
                             </Text>
                           </View>
                         ))}
+                      </View>
                       </View>
                     </View>
                   )}
@@ -347,8 +363,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  // flexGrow lets the body (and its chart) stretch to the bottom of the screen instead of
+  // leaving an empty band under the content.
   scrollContent: {
-    paddingBottom: 40,
+    flexGrow: 1,
+    paddingBottom: SPACING.lg,
   },
   heroCard: {
     backgroundColor: COLORS.primary,
@@ -400,6 +419,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
   body: {
+    flex: 1,
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.md,
     gap: SPACING.lg,
@@ -456,10 +476,25 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
     marginTop: 1,
   },
+  trendSection: {
+    flex: 1,
+  },
+  // Light-grey panel (same as the Home "Today" strip); grows to fill the remaining height.
   trendChart: {
+    flex: 1,
+    minHeight: TREND_BAR_MIN_HEIGHT + TREND_COL_CHROME + SPACING.md * 2,
     marginTop: SPACING.sm,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.backgroundSubtle,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+  },
+  trendBars: {
+    ...StyleSheet.absoluteFillObject,
     flexDirection: 'row',
     alignItems: 'flex-end',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.sm,
   },
   trendCol: {
     flex: 1,
@@ -472,8 +507,9 @@ const styles = StyleSheet.create({
     height: 13,
   },
   trendTrack: {
-    height: TREND_BAR_MAX_HEIGHT,
-    width: 14,
+    width: '55%',
+    maxWidth: 36,
+    minWidth: 6,
     justifyContent: 'flex-end',
   },
   trendBar: {

@@ -265,77 +265,9 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   const [rideState, setRideState] = useState<'idle' | 'dispatch' | 'accepted' | 'arrived' | 'in_transit' | 'fare_collect'>('idle');
   const [fareToCollect, setFareToCollect] = useState<number | null>(null);
 
-  const [historyList, setHistoryList] = useState<RideHistoryItem[]>([
-    {
-      id: 1,
-      bookingCode: 'TRV-20240520-0941',
-      passengerName: 'Maria Santos',
-      pickup: 'Nasugbu Municipal Hall',
-      dropoff: 'Bucana, Nasugbu',
-      distanceKm: 1.8,
-      fare: 45.0,
-      date: 'May 20, 2024',
-      time: '09:41 AM',
-      status: 'completed',
-      paymentMethod: 'cash',
-      rating: 5,
-    },
-    {
-      id: 2,
-      bookingCode: 'TRV-20240520-0852',
-      passengerName: 'Juan Reyes',
-      pickup: 'Bucana, Nasugbu',
-      dropoff: 'Nasugbu Municipal Hall',
-      distanceKm: 1.8,
-      fare: 40.0,
-      date: 'May 20, 2024',
-      time: '08:52 AM',
-      status: 'completed',
-      paymentMethod: 'cash',
-      rating: null,
-    },
-    {
-      id: 3,
-      bookingCode: 'TRV-20240519-0523',
-      passengerName: 'Ana Cruz',
-      pickup: 'Bucana Public Market',
-      dropoff: 'Brgy. 10, Nasugbu',
-      distanceKm: 2.5,
-      fare: 50.0,
-      date: 'May 19, 2024',
-      time: '05:23 PM',
-      status: 'completed',
-      paymentMethod: 'gcash',
-      rating: 4,
-    },
-    {
-      id: 4,
-      bookingCode: 'TRV-20240519-0310',
-      passengerName: 'Mark Villanueva',
-      pickup: 'Barangay 8, Nasugbu',
-      dropoff: 'Nasugbu Municipal Hall',
-      distanceKm: 1.8,
-      fare: 45.0,
-      date: 'May 19, 2024',
-      time: '03:10 PM',
-      status: 'completed',
-      paymentMethod: 'cash',
-      rating: 5,
-    },
-    {
-      id: 5,
-      bookingCode: 'TRV-20240518-1140',
-      passengerName: 'Liza Fernandez',
-      pickup: 'Wawa Port Terminal',
-      dropoff: 'Bucana, Nasugbu',
-      distanceKm: 2.0,
-      fare: 30.0,
-      date: 'May 18, 2024',
-      time: '11:40 AM',
-      status: 'cancelled',
-      paymentMethod: 'cash',
-    },
-  ]);
+  // Starts empty and is filled from the driver's real booking history — never placeholder rides
+  // (which used to show, and feed earnings, until the request returned or if it failed).
+  const [historyList, setHistoryList] = useState<RideHistoryItem[]>([]);
 
   const addToHistory = (item: RideHistoryItem) => {
     setHistoryList((prev) => [item, ...prev]);

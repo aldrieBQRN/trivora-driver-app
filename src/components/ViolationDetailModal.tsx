@@ -1,11 +1,22 @@
 import React from 'react';
-import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity, Image, Platform } from 'react-native';
+import { View, Text, StyleSheet, Modal, ScrollView, Pressable, Image, Platform } from 'react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { ViolationCitation } from '../types';
-import { X, AlertOctagon, CheckCircle2, Clock3, Banknote } from 'lucide-react-native';
-import StatusBadge from './StatusBadge';
+import { X, CheckCircle2, Clock3, Banknote } from 'lucide-react-native';
+import StatusBadge, { BadgeTone } from './StatusBadge';
+import FloatingIconButton from './FloatingIconButton';
 import AppealFormFields, { ProofPhoto } from './AppealFormFields';
+
+/** One tone per real lifecycle state (shared with the Violations list): an appeal under review is
+ * amber, not red — the fine isn't outstanding while it's being reviewed. */
+export function violationTone(v: ViolationCitation): BadgeTone {
+  switch (v.driverStatus) {
+    case 'resolved': return 'success';
+    case 'appeal_under_review': return 'warning';
+    default: return 'danger';
+  }
+}
 
 interface ViolationDetailModalProps {
   visible: boolean;
@@ -26,6 +37,7 @@ export default function ViolationDetailModal({ visible, violation, onClose }: Vi
   if (!violation) return null;
   const isResolved = violation.status === 'resolved';
   const appeal = violation.appeal;
+  const tone = violationTone(violation);
 
   const handleAppealSubmit = (reason: string, proof?: ProofPhoto) =>
     submitViolationAppeal(violation.id, reason, proof);
@@ -33,36 +45,34 @@ export default function ViolationDetailModal({ visible, violation, onClose }: Vi
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
+        {/* Tap outside the sheet to close */}
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close violation details" />
+
         <View style={styles.sheet}>
+          <View style={styles.handle} />
           <View style={styles.header}>
-            <Text style={styles.title}>Violation Details</Text>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
-              <X size={20} color={COLORS.textPrimary} />
-            </TouchableOpacity>
+            <View style={styles.flex}>
+              <Text style={styles.title}>Violation Details</Text>
+              <Text style={styles.headerSub}>{violation.citationNo}</Text>
+            </View>
+            <FloatingIconButton size={36} onPress={onClose} accessibilityLabel="Close" style={styles.closeButton}>
+              <X size={18} color={COLORS.textPrimary} />
+            </FloatingIconButton>
           </View>
 
-          <ScrollView contentContainerStyle={styles.content}>
-            <View style={styles.citationRow}>
-              <View style={styles.citationLeft}>
-                {isResolved ? (
-                  <CheckCircle2 size={16} color={COLORS.success} />
-                ) : (
-                  <AlertOctagon size={16} color={COLORS.dangerDark} />
-                )}
-                <Text style={styles.citationNo}>{violation.citationNo}</Text>
-              </View>
-              <StatusBadge
-                label={violation.driverStatusLabel}
-                tone={isResolved ? 'success' : 'danger'}
-                size="sm"
-              />
+          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            {/* The fine and where it stands, first */}
+            <View style={styles.hero}>
+              <Text style={styles.heroLabel}>{isResolved ? 'Fine' : 'Fine due'}</Text>
+              <Text style={[styles.heroAmount, isResolved && styles.heroAmountSettled]}>₱{violation.fine.toFixed(2)}</Text>
+              <StatusBadge label={violation.driverStatusLabel} tone={tone} style={styles.heroBadge} />
             </View>
 
             <Text style={styles.violationTitle}>{violation.title}</Text>
             <Text style={styles.violationDesc}>{violation.description}</Text>
 
-            <View style={styles.divider} />
-
+            <Text style={styles.sectionLabel}>Details</Text>
+            <DetailRow label="Citation no." value={violation.citationNo} />
             <DetailRow label="Date" value={violation.date} />
             <DetailRow label="Type" value={violation.type} />
             {violation.location && (
@@ -71,14 +81,14 @@ export default function ViolationDetailModal({ visible, violation, onClose }: Vi
                 value={`${violation.location.latitude.toFixed(5)}, ${violation.location.longitude.toFixed(5)}`}
               />
             )}
-            <DetailRow label="Fine Amount" value={`₱${violation.fine.toFixed(2)}`} last />
 
-            <View style={styles.divider} />
+            {/* Divider only when an appeal form or appeal status follows */}
+            {(appeal || violation.canAppeal) && <View style={styles.divider} />}
 
             {/* ── Appeal lifecycle panel ─────────────────────────────────────── */}
             {!appeal && violation.canAppeal && (
               <View style={styles.appealSection}>
-                <Text style={styles.sectionLabel}>APPEAL THIS VIOLATION</Text>
+                <Text style={styles.appealLabel}>Appeal this violation</Text>
                 <Text style={styles.sectionHint}>
                   If this was recorded in error, or you were responding to a genuine emergency, explain what
                   happened below. Appeals are reviewed by the TMO office.
@@ -130,7 +140,7 @@ export default function ViolationDetailModal({ visible, violation, onClose }: Vi
 
             {appeal && (
               <View style={styles.appealRecap}>
-                <Text style={styles.appealRecapLabel}>Your Appeal</Text>
+                <Text style={styles.appealRecapLabel}>Your appeal</Text>
                 <Text style={styles.appealRecapReason}>"{appeal.reason}"</Text>
                 {appeal.evidenceUrl && (
                   <Image source={{ uri: appeal.evidenceUrl }} style={styles.appealEvidence} />
@@ -168,64 +178,89 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.6)',
     justifyContent: 'flex-end',
   },
+  flex: { flex: 1 },
   sheet: {
     backgroundColor: COLORS.background,
     borderTopLeftRadius: RADIUS.xxl,
     borderTopRightRadius: RADIUS.xxl,
-    maxHeight: '88%',
+    maxHeight: '90%',
     ...SHADOWS.sheet,
+  },
+  handle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.border,
+    marginTop: SPACING.sm,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: SPACING.sm,
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.md,
+    paddingTop: SPACING.sm + 2,
     paddingBottom: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
   },
   title: {
-    ...TYPOGRAPHY.h3,
+    ...TYPOGRAPHY.h2,
     color: COLORS.textPrimary,
   },
+  headerSub: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
     backgroundColor: COLORS.backgroundSubtle,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   content: {
-    padding: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.xs,
     paddingBottom: Platform.OS === 'ios' ? 34 : SPACING.lg,
   },
-  citationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  citationLeft: {
-    flexDirection: 'row',
+  hero: {
     alignItems: 'center',
     gap: 6,
+    paddingVertical: SPACING.lg,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.backgroundSubtle,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
   },
-  citationNo: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '900',
-    color: COLORS.primary,
+  heroLabel: {
+    ...TYPOGRAPHY.label,
+    color: COLORS.textMuted,
+  },
+  heroAmount: {
+    ...TYPOGRAPHY.hero,
+    color: COLORS.textPrimary,
+  },
+  heroBadge: {
+    alignSelf: 'center',
+  },
+  heroAmountSettled: {
+    color: COLORS.textSecondary,
   },
   violationTitle: {
     ...TYPOGRAPHY.h2,
     color: COLORS.textPrimary,
-    marginTop: SPACING.sm,
+    marginTop: SPACING.lg,
   },
   violationDesc: {
-    ...TYPOGRAPHY.bodySmall,
+    ...TYPOGRAPHY.body,
     color: COLORS.textSecondary,
-    lineHeight: 18,
     marginTop: 4,
+  },
+  sectionLabel: {
+    ...TYPOGRAPHY.label,
+    color: COLORS.textMuted,
+    marginTop: SPACING.lg,
+    marginBottom: SPACING.xs,
   },
   divider: {
     height: 1,
@@ -236,30 +271,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.borderLight,
+    gap: SPACING.md,
+    minHeight: 40,
   },
-  detailRowLast: {
-    borderBottomWidth: 0,
-  },
+  detailRowLast: {},
   detailLabel: {
-    ...TYPOGRAPHY.caption,
+    ...TYPOGRAPHY.body,
     color: COLORS.textSecondary,
   },
   detailValue: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '800',
+    ...TYPOGRAPHY.body,
+    fontWeight: '600',
     color: COLORS.textPrimary,
+    flexShrink: 1,
+    textAlign: 'right',
   },
   appealSection: {
     backgroundColor: COLORS.backgroundSubtle,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
     padding: SPACING.md,
   },
-  sectionLabel: {
-    ...TYPOGRAPHY.label,
-    color: COLORS.textMuted,
+  appealLabel: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.textPrimary,
   },
   sectionHint: {
     ...TYPOGRAPHY.bodySmall,
@@ -293,7 +329,7 @@ const styles = StyleSheet.create({
   },
   statusPanelTitle: {
     ...TYPOGRAPHY.body,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.textPrimary,
   },
   statusPanelBody: {

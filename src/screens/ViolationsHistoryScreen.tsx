@@ -3,12 +3,12 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator }
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { ViolationCitation } from '../types';
-import { AlertOctagon, ShieldCheck, CheckCircle2, ChevronRight, WifiOff } from 'lucide-react-native';
+import { ShieldCheck, ChevronRight, WifiOff } from 'lucide-react-native';
 import EmptyState from '../components/EmptyState';
 import ScreenHeader from '../components/ScreenHeader';
 import StatusBadge from '../components/StatusBadge';
 import FilterTabs from '../components/FilterTabs';
-import ViolationDetailModal from '../components/ViolationDetailModal';
+import ViolationDetailModal, { violationTone } from '../components/ViolationDetailModal';
 
 type FilterTab = 'All' | 'Pending' | 'Resolved';
 
@@ -43,36 +43,30 @@ export default function ViolationsHistoryScreen() {
     };
   }, [violations]);
 
+  // Plain list row: title + fine on top, citation/date beneath, a two-line description, then the
+  // status badge — the badge is the only status colour on the row.
   const renderViolation = ({ item }: { item: ViolationCitation }) => {
     const isResolved = item.status === 'resolved';
 
     return (
-      <TouchableOpacity style={styles.row} onPress={() => setSelectedViolationId(item.id)} activeOpacity={0.7}>
-        <View style={[styles.accentBar, isResolved ? styles.accentBarResolved : styles.accentBarPending]} />
-
+      <TouchableOpacity
+        style={styles.row}
+        onPress={() => setSelectedViolationId(item.id)}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.title}, ${item.driverStatusLabel}, fine ₱${item.fine.toFixed(2)}. Open details`}
+      >
         <View style={styles.rowBody}>
-          <View style={styles.rowHeader}>
-            <View style={styles.badgeRow}>
-              {isResolved ? (
-                <CheckCircle2 size={15} color={COLORS.success} />
-              ) : (
-                <AlertOctagon size={15} color={COLORS.dangerDark} />
-              )}
-              <Text style={styles.citationNo}>{item.citationNo}</Text>
-            </View>
-            <StatusBadge label={item.driverStatusLabel} tone={isResolved ? 'success' : 'danger'} size="sm" />
+          <View style={styles.titleRow}>
+            <Text style={styles.violationTitle} numberOfLines={1}>{item.title}</Text>
+            <Text style={[styles.fineText, isResolved && styles.fineTextSettled]}>₱{item.fine.toFixed(2)}</Text>
           </View>
-
-          <Text style={styles.violationTitle}>{item.title}</Text>
-          <Text style={styles.violationDesc}>{item.description}</Text>
-
-          <View style={styles.footerRow}>
-            <Text style={styles.dateText}>{item.date}</Text>
-            <Text style={[styles.fineText, !isResolved && styles.fineTextPending]}>₱{item.fine.toFixed(2)}</Text>
-          </View>
+          <Text style={styles.metaText} numberOfLines={1}>{item.citationNo} · {item.date}</Text>
+          <Text style={styles.violationDesc} numberOfLines={2}>{item.description}</Text>
+          <StatusBadge label={item.driverStatusLabel} tone={violationTone(item)} style={styles.badge} />
         </View>
 
-        <ChevronRight size={18} color={COLORS.textMuted} style={styles.chevron} />
+        <ChevronRight size={18} color={COLORS.textMuted} />
       </TouchableOpacity>
     );
   };
@@ -119,7 +113,7 @@ export default function ViolationsHistoryScreen() {
                 <Text style={[styles.summaryValue, summary.outstandingFines > 0 && styles.summaryValueDanger]}>
                   ₱{summary.outstandingFines.toFixed(2)}
                 </Text>
-                <Text style={styles.summaryLabel}>Outstanding Fines</Text>
+                <Text style={styles.summaryLabel}>Outstanding fines</Text>
               </View>
             </View>
           )}
@@ -160,19 +154,22 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodySmall,
     color: COLORS.textSecondary,
   },
+  // Same grouped strip as the Home "Today" figures.
   summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: SPACING.md,
     marginHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm + 2,
-    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 4,
     backgroundColor: COLORS.backgroundSubtle,
     borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
   },
   summaryItem: {
     flex: 1,
     alignItems: 'center',
+    gap: 2,
   },
   summaryValue: {
     ...TYPOGRAPHY.h2,
@@ -184,82 +181,59 @@ const styles = StyleSheet.create({
   summaryLabel: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
-    marginTop: 2,
   },
   summaryDivider: {
     width: 1,
-    height: 28,
+    alignSelf: 'stretch',
     backgroundColor: COLORS.border,
   },
   listContent: {
     paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.xs,
     paddingBottom: 40,
   },
   row: {
     flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: SPACING.md,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
     gap: SPACING.sm,
   },
-  accentBar: {
-    width: 3,
-    borderRadius: RADIUS.full,
-  },
-  chevron: {
-    alignSelf: 'center',
-  },
-  accentBarPending: {
-    backgroundColor: COLORS.danger,
-  },
-  accentBarResolved: {
-    backgroundColor: COLORS.success,
-  },
   rowBody: {
     flex: 1,
+    minWidth: 0,
   },
-  rowHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  badgeRow: {
+  titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-  },
-  citationNo: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '900',
-    color: COLORS.primary,
+    gap: SPACING.sm,
   },
   violationTitle: {
-    ...TYPOGRAPHY.h3,
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
     color: COLORS.textPrimary,
-    marginBottom: 4,
+    flex: 1,
+  },
+  fineText: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  fineTextSettled: {
+    color: COLORS.textMuted,
+  },
+  metaText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    marginTop: 2,
   },
   violationDesc: {
     ...TYPOGRAPHY.bodySmall,
     color: COLORS.textSecondary,
-    lineHeight: 16,
+    marginTop: 6,
   },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  badge: {
     marginTop: SPACING.sm,
-  },
-  dateText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
-  },
-  fineText: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '800',
-    color: COLORS.textSecondary,
-  },
-  fineTextPending: {
-    color: COLORS.dangerDark,
   },
 });
