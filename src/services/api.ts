@@ -517,6 +517,8 @@ export function mapBookingRecordToHistoryItem(raw: any) {
     timestamp: dateObj.toISOString(),
     status: (raw.status === 'completed' ? 'completed' : 'cancelled') as 'completed' | 'cancelled',
     paymentMethod: (raw.payment_method === 'gcash' ? 'gcash' : 'cash') as 'cash' | 'gcash',
+    paymentStatus: raw.payment_status || undefined,
+    paymentReference: raw.payment_reference || null,
     rating: raw.rating?.score != null ? Number(raw.rating.score) : null,
     ratingComment: raw.rating?.comment || null,
     ratingFeedbackTags: Array.isArray(raw.rating?.feedback_tags) ? raw.rating.feedback_tags : undefined,

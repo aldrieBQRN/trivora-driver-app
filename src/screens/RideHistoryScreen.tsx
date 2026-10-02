@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, SectionList, TouchableOpacity } from 'react-nat
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { RideHistoryItem } from '../types';
-import { Receipt, Star } from 'lucide-react-native';
+import { ChevronRight, Receipt, Star } from 'lucide-react-native';
 import EmptyState from '../components/EmptyState';
 import ScreenHeader from '../components/ScreenHeader';
 import RouteTimeline from '../components/RouteTimeline';
@@ -63,6 +63,10 @@ export default function RideHistoryScreen() {
         )}
         renderItem={({ item }) => {
           const isCompleted = item.status === 'completed';
+          // Completed but the driver hasn't confirmed payment yet (no earnings credited).
+          const isUnpaid = isCompleted && !!item.paymentStatus && item.paymentStatus !== 'paid';
+          const source = item.isManual ? 'Manual Ride' : item.isWalkIn ? 'Scan to Ride' : null;
+          const meta = [source, item.passengerName, item.time].filter(Boolean).join(' · ');
           return (
             <TouchableOpacity
               style={styles.row}
@@ -76,27 +80,28 @@ export default function RideHistoryScreen() {
                   dropoff={{ label: 'Destination', address: item.dropoff }}
                   compact
                 />
-                <Text style={styles.metaText}>
-                  {item.isManual ? `Manual Ride · ${item.passengerName}` : item.isWalkIn ? 'Scan to Ride' : item.passengerName} · {item.time}
-                </Text>
+                <Text style={styles.metaText} numberOfLines={1}>{meta}</Text>
               </View>
               <View style={styles.rowRight}>
-                <Text style={styles.fareText}>₱{item.fare.toFixed(2)}</Text>
+                <Text style={[styles.fareText, !isCompleted && styles.fareTextInert]}>₱{item.fare.toFixed(2)}</Text>
                 <Text style={styles.paxText}>{item.passengerCount ?? 1} pax</Text>
                 <StatusBadge
-                  label={isCompleted ? 'Completed' : 'Cancelled'}
-                  tone={isCompleted ? 'success' : 'danger'}
-                  size="sm"
+                  label={isUnpaid ? 'Unpaid' : isCompleted ? 'Completed' : 'Cancelled'}
+                  tone={isUnpaid ? 'warning' : isCompleted ? 'success' : 'danger'}
                 />
                 {isCompleted && (
-                  item.rating ? (
-                    <View style={styles.ratingRow}>
-                      <Star size={11} color={COLORS.amber} fill={COLORS.amber} />
-                      <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.notRatedText}>Not Rated</Text>
-                  )
+                  <View style={styles.rightFoot}>
+                    {item.rating ? (
+                      <View style={styles.ratingRow}>
+                        <Star size={12} color={COLORS.amber} fill={COLORS.amber} />
+                        <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
+                      </View>
+                    ) : item.isManual ? null : (
+                      // A manual (walk-in, no app) passenger can never rate, so no "Not rated" there.
+                      <Text style={styles.notRatedText}>Not rated</Text>
+                    )}
+                    <ChevronRight size={16} color={COLORS.textMuted} />
+                  </View>
                 )}
               </View>
             </TouchableOpacity>
@@ -129,7 +134,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.borderLight,
@@ -137,15 +142,26 @@ const styles = StyleSheet.create({
   },
   routeCol: {
     flex: 1,
-    gap: 6,
+    minWidth: 0,
+    gap: 4,
   },
   rowRight: {
     alignItems: 'flex-end',
-    gap: 4,
+    gap: 5,
   },
   fareText: {
     ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
     color: COLORS.textPrimary,
+  },
+  fareTextInert: {
+    color: COLORS.textMuted,
+    textDecorationLine: 'line-through',
+  },
+  rightFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   paxText: {
     ...TYPOGRAPHY.caption,
@@ -158,15 +174,17 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
   },
   notRatedText: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
   },
+  // Starts under the addresses (rail width 16 + gap 12).
   metaText: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
-    marginLeft: 20,
+    color: COLORS.textMuted,
+    marginLeft: 28,
   },
 });
