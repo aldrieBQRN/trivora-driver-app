@@ -1,12 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import * as maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { Compass, LocateFixed } from 'lucide-react-native';
-import { COLORS, RADIUS, SHADOWS } from '../constants/theme';
+import { COLORS, SHADOWS } from '../constants/theme';
 import { TrivoraDriverMapProps } from './TrivoraDriverMap.types';
 import { haversineKm } from '../utils/geo';
+import {
+  MAP_STYLES,
+  ACTIVE_RIDE_PITCH,
+  TOP_DOWN_PITCH,
+  MapVariant,
+  boundsOf,
+} from '../constants/openFreeMap';
 
 const TRICYCLE_MARKER_IMAGE = require('../../assets/images/tricycle-marker.webp');
 const tricycleUri: string =
@@ -14,21 +20,12 @@ const tricycleUri: string =
     ? TRICYCLE_MARKER_IMAGE
     : TRICYCLE_MARKER_IMAGE?.default || TRICYCLE_MARKER_IMAGE?.uri || String(TRICYCLE_MARKER_IMAGE);
 
-/** Mirrors the native map's re-frame threshold — see TrivoraDriverMap.native.tsx. */
 const REFRAME_THRESHOLD_KM = 0.12;
 const EDGE_MARGIN = 40;
-/** Home only: a later GPS fix this far from where Home was last framed re-centers the camera,
- * until the driver has panned/zoomed themselves — see the native map for the full rationale. */
 const HOME_RECENTER_THRESHOLD_KM = 0.15;
-/** Max route vertices used for the trip fit — same sampling as the native map. */
 const MAX_FIT_ROUTE_POINTS = 40;
 
-// Identical tile source to the Passenger app's web map — same CARTO Voyager basemap.
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=cb1_3qo7_1_ac41fdc9883213d666d06544';
-const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>';
-
-function driverIconHtml(heading: number, isOnline: boolean, uri: string): string {
+export function driverIconHtml(heading: number, isOnline: boolean, uri: string): string {
   const filter = isOnline
     ? 'filter: drop-shadow(0 2px 5px rgba(0,0,0,0.35));'
     : 'filter: grayscale(100%) opacity(0.55);';
@@ -39,21 +36,6 @@ function driverIconHtml(heading: number, isOnline: boolean, uri: string): string
   `;
 }
 
-
-/** Anchor bottom switches the icon's anchor from center to its bottom tip so teardrop pin
- * markers point down at the exact coordinate. */
-function makeDivIcon(html: string, size: number, anchorBottom = false): L.DivIcon {
-  return L.divIcon({
-    html,
-    className: 'trivora-marker-icon',
-    iconSize: [size, size],
-    iconAnchor: anchorBottom ? [size / 2, size] : [size / 2, size / 2],
-  });
-}
-
-/** Same teardrop-pin shape as the Passenger app (TrivoraMap.web.tsx / PinLocationModal.web.tsx):
- * pickup is green (#059669), dropoff / destination is red (#EF4444).
- * Both point down at the exact coordinate with anchor at bottom-center. */
 export const PICKUP_ICON_HTML = `
   <div style="cursor: pointer; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.3)); display: flex; flex-direction: column; align-items: center;">
     <div style="background: #059669; width: 22px; height: 22px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); display: flex; align-items: center; justify-content: center; border: 2px solid #FFFFFF;">
@@ -80,187 +62,6 @@ export const DROPOFF_ICON_HTML = `
   </div>
 `;
 
-interface MapControllerProps {
-  /** Null for a map with no live driver (Ride Details' historical trip). */
-  driver: { lat: number; lng: number } | null;
-  target?: { lat: number; lng: number } | null;
-  /** Trip mode (with `target` as the pickup): frame pickup + destination + route, not the driver. */
-  tripDropoff?: { lat: number; lng: number } | null;
-  tripRoute?: { lat: number; lng: number }[] | null;
-  topInset: number;
-  bottomInset: number;
-  recenterSignal: number;
-  pinLocation?: { lat: number; lng: number } | null;
-  pickupLocation?: { lat: number; lng: number } | null;
-  routeCoordinates?: { lat: number; lng: number }[] | null;
-  onUserMoved?: () => void;
-}
-
-/** Imperatively frames the map — Leaflet has no declarative "fit these points" prop. Frames once
- * when a target first appears (or on mount, if there's none), re-frames while a target is active
- * only once the driver has moved meaningfully since the last frame (not on every GPS tick), and
- * re-frames on demand via the compass button's recenterSignal — mirroring the native map and the
- * Passenger app's own web map controller so all three behave the same way. */
-function MapController({
-  driver,
-  target,
-  tripDropoff,
-  tripRoute,
-  topInset,
-  bottomInset,
-  recenterSignal,
-  pinLocation,
-  pickupLocation,
-  routeCoordinates,
-  onUserMoved,
-}: MapControllerProps) {
-  const map = useMap();
-  const driverLat = driver?.lat;
-  const driverLng = driver?.lng;
-  // Leaflet measures its container once at creation; inside a flex layout that size can be wrong
-  // until invalidateSize(). Framing waits for it, so the first fit uses the real map area.
-  const [sized, setSized] = useState(false);
-  const lastFramedRef = useRef<{ lat: number; lng: number } | null>(null);
-  const homeFramedRef = useRef<{ lat: number; lng: number } | null>(null);
-  const userMovedRef = useRef(false);
-
-  // Only genuine user gestures count — programmatic flyTo/setView also fire zoom/move events.
-  useMapEvents({
-    dragstart: () => {
-      userMovedRef.current = true;
-      onUserMoved?.();
-    },
-  });
-  useEffect(() => {
-    const el = map.getContainer();
-    const onWheel = () => {
-      userMovedRef.current = true;
-      onUserMoved?.();
-    };
-    el.addEventListener('wheel', onWheel, { passive: true });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, [map, onUserMoved]);
-
-  const frame = (animated: boolean) => {
-    const opts = {
-      paddingTopLeft: [EDGE_MARGIN, topInset + EDGE_MARGIN] as [number, number],
-      paddingBottomRight: [EDGE_MARGIN, bottomInset + EDGE_MARGIN] as [number, number],
-    };
-    if (pinLocation && (pickupLocation || driver)) {
-      // Pin Location mode: frame from pickup (driver) to destination (pinLocation),
-      // including any intermediate route coordinates so the entire trip is in view.
-      const pickup = pickupLocation || driver!;
-      const points: [number, number][] = [
-        [pickup.lat, pickup.lng],
-        [pinLocation.lat, pinLocation.lng],
-      ];
-      if (routeCoordinates && routeCoordinates.length > 0) {
-        const step = Math.max(1, Math.ceil(routeCoordinates.length / MAX_FIT_ROUTE_POINTS));
-        routeCoordinates.forEach((c, i) => {
-          if (i % step === 0 || i === routeCoordinates.length - 1) points.push([c.lat, c.lng]);
-        });
-      }
-      const bounds = L.latLngBounds(points);
-      if (animated) map.flyToBounds(bounds, { ...opts, duration: 0.6 });
-      else map.fitBounds(bounds, opts);
-      lastFramedRef.current = null;
-      return;
-    }
-    if (target && tripDropoff) {
-      // Trip mode: both stored endpoints always, plus the sampled route when it has loaded.
-      const points: [number, number][] = [
-        [target.lat, target.lng],
-        [tripDropoff.lat, tripDropoff.lng],
-      ];
-      if (tripRoute && tripRoute.length > 0) {
-        const step = Math.max(1, Math.ceil(tripRoute.length / MAX_FIT_ROUTE_POINTS));
-        tripRoute.forEach((c, i) => {
-          if (i % step === 0 || i === tripRoute.length - 1) points.push([c.lat, c.lng]);
-        });
-      }
-      const bounds = L.latLngBounds(points);
-      if (animated) map.flyToBounds(bounds, { ...opts, duration: 0.6 });
-      else map.fitBounds(bounds, opts);
-      lastFramedRef.current = null;
-    } else if (target) {
-      const points: [number, number][] = [[target.lat, target.lng]];
-      if (driverLat != null && driverLng != null) points.push([driverLat, driverLng]);
-      const bounds = L.latLngBounds(points);
-      if (animated) map.flyToBounds(bounds, { ...opts, duration: 0.6 });
-      else map.fitBounds(bounds, opts);
-      lastFramedRef.current = driverLat != null && driverLng != null ? { lat: driverLat, lng: driverLng } : null;
-    } else {
-      if (driverLat == null || driverLng == null) return;
-      // Single point (Home, no ride target) — a plain setView/flyTo centers on the mathematical
-      // middle of the WHOLE container, ignoring the header/sheet chrome. Instead, project where
-      // the driver's point would render if centered normally, shift that pixel by half the
-      // top/bottom inset difference, and center on whatever geographic point lands there —
-      // computed from the map's own current projection/zoom, not a guessed offset.
-      homeFramedRef.current = { lat: driverLat, lng: driverLng };
-      const zoom = 16;
-      const driverPixel = map.project(L.latLng(driverLat, driverLng), zoom);
-      const verticalOffset = (topInset - bottomInset) / 2;
-      const shiftedPixel = L.point(driverPixel.x, driverPixel.y - verticalOffset);
-      const center = map.unproject(shiftedPixel, zoom);
-      if (animated) map.flyTo(center, zoom, { duration: 0.6 });
-      else map.setView(center, zoom);
-    }
-  };
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      map.invalidateSize();
-      setSized(true);
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [map]);
-
-  // Also re-frames once the caller's real measured insets replace their initial 0 default (e.g.
-  // Home's header/sheet report their actual height via onLayout shortly after first mount) —
-  // without this, a target-less map (Home) would frame once with no inset data and never correct
-  // itself when the real values arrive a moment later.
-  // Trip mode also refits once when its route loads (tripRoute), never on GPS ticks.
-  useEffect(() => {
-    if (!sized) return;
-    if (!target && userMovedRef.current && homeFramedRef.current) return;
-    frame(false);
-    if (!target) lastFramedRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sized, target?.lat, target?.lng, tripDropoff?.lat, tripDropoff?.lng, tripRoute, topInset, bottomInset]);
-
-  // Home only — re-center when a materially different fix replaces the one Home was framed on
-  // (coarse/cached first fix -> real fix); ordinary GPS ticks only move the marker.
-  useEffect(() => {
-    const framed = homeFramedRef.current;
-    if (target || !framed || userMovedRef.current || driverLat == null || driverLng == null) return;
-    if (haversineKm(framed, { lat: driverLat, lng: driverLng }) >= HOME_RECENTER_THRESHOLD_KM) frame(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driverLat, driverLng]);
-
-  useEffect(() => {
-    if (!target || tripDropoff || !lastFramedRef.current || driverLat == null || driverLng == null) return;
-    const moved = haversineKm(lastFramedRef.current, { lat: driverLat, lng: driverLng });
-    if (moved >= REFRAME_THRESHOLD_KM) frame(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driverLat, driverLng]);
-
-  useEffect(() => {
-    if (recenterSignal > 0) {
-      userMovedRef.current = false;
-      frame(true);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recenterSignal]);
-
-  return null;
-}
-
-/** Reports map taps (only mounted when the caller passed `onMapPress`). */
-function MapPressHandler({ onMapPress }: { onMapPress: (p: { lat: number; lng: number }) => void }) {
-  useMapEvents({ click: (e) => onMapPress({ lat: e.latlng.lat, lng: e.latlng.lng }) });
-  return null;
-}
-
 export default function TrivoraDriverMapWeb({
   driverLocation,
   isOnline,
@@ -278,122 +79,447 @@ export default function TrivoraDriverMapWeb({
   onMapPress,
   pinLocation,
   pickupLocation,
+  mapVariant,
+  mapStyleUrl,
+  pitch,
   style,
 }: TrivoraDriverMapProps) {
-  const [internalRecenterSignal, setInternalRecenterSignal] = useState(0);
-  const [isFollowing, setIsFollowing] = useState(true);
-  const effectiveRecenterSignal = (externalRecenterSignal ?? 0) + internalRecenterSignal;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
-  const handleUserMoved = useCallback(() => {
-    setIsFollowing(false);
+  const effectiveVariant: MapVariant = mapVariant ?? (pitch && pitch > 0 ? 'liberty' : 'bright');
+  const effectiveMapStyle = mapStyleUrl ?? MAP_STYLES[effectiveVariant];
+  const effectivePitch = pitch ?? (effectiveVariant === 'liberty' ? ACTIVE_RIDE_PITCH : TOP_DOWN_PITCH);
+
+  const [isFollowing, setIsFollowing] = useState(true);
+  const isFollowingRef = useRef(true);
+  const userMovedRef = useRef(false);
+  const homeFramedRef = useRef<{ lat: number; lng: number } | null>(null);
+  const lastFramedRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  const edgePadding = useMemo(
+    () => ({
+      top: topInset + EDGE_MARGIN,
+      right: EDGE_MARGIN,
+      bottom: bottomInset + EDGE_MARGIN,
+      left: EDGE_MARGIN,
+    }),
+    [topInset, bottomInset]
+  );
+
+  const tripFitPadding = useMemo(
+    () => ({
+      top: topInset + 20,
+      right: 32,
+      bottom: bottomInset + 32,
+      left: 32,
+    }),
+    [topInset, bottomInset]
+  );
+
+  const isFallbackRoute = routeSource === 'fallback';
+
+  // Markers refs
+  const driverMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const targetMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const tripDropoffMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const pickupMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const pinMarkerRef = useRef<maplibregl.Marker | null>(null);
+
+  // Sync route layer helper
+  const syncRouteLayer = useCallback(
+    (map: maplibregl.Map, coords: { lat: number; lng: number }[], fallback: boolean) => {
+      if (!map.isStyleLoaded()) return;
+      const lineCoords = (coords || []).map((c) => [c.lng, c.lat]);
+      const data: GeoJSON.Feature<GeoJSON.LineString> = {
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: lineCoords },
+      };
+
+      const source = map.getSource('driver-route') as maplibregl.GeoJSONSource | undefined;
+      if (source) {
+        source.setData(data);
+      } else if (lineCoords.length > 0) {
+        map.addSource('driver-route', { type: 'geojson', data });
+        map.addLayer({
+          id: 'driver-route-line',
+          type: 'line',
+          source: 'driver-route',
+          layout: {
+            'line-join': 'round',
+            'line-cap': fallback ? 'butt' : 'round',
+          },
+          paint: fallback
+            ? { 'line-color': '#94A3B8', 'line-width': 4, 'line-dasharray': [2, 1.5] }
+            : { 'line-color': '#2563EB', 'line-width': 5 },
+        });
+      }
+    },
+    []
+  );
+
+  // Initialize MapLibre GL map
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+
+    const initialPoint = driverLocation
+      ? { lat: driverLocation.lat, lng: driverLocation.lng }
+      : target
+        ? { lat: target.lat, lng: target.lng }
+        : { lat: 14.0718, lng: 120.6325 };
+
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: effectiveMapStyle,
+      center: [initialPoint.lng, initialPoint.lat],
+      zoom: 16,
+      pitch: effectivePitch,
+      bearing: 0,
+      attributionControl: false,
+    });
+
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+
+    map.on('load', () => {
+      setMapReady(true);
+      syncRouteLayer(map, routeCoordinates || [], isFallbackRoute);
+    });
+
+    map.on('style.load', () => {
+      syncRouteLayer(map, routeCoordinates || [], isFallbackRoute);
+    });
+
+    map.on('styleimagemissing', (e: { id: string }) => {
+      const id = e?.id;
+      if (id && !map.hasImage(id)) {
+        map.addImage(id, { width: 1, height: 1, data: new Uint8Array(4) });
+      }
+    });
+
+    map.on('dragstart', () => {
+      userMovedRef.current = true;
+      if (!target) {
+        isFollowingRef.current = false;
+        setIsFollowing(false);
+      }
+    });
+
+    mapRef.current = map;
+
+    return () => {
+      driverMarkerRef.current?.remove();
+      targetMarkerRef.current?.remove();
+      tripDropoffMarkerRef.current?.remove();
+      pickupMarkerRef.current?.remove();
+      pinMarkerRef.current?.remove();
+      map.remove();
+      mapRef.current = null;
+      setMapReady(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Rounded to the nearest 5° so small simulated-GPS heading jitter doesn't rebuild this DOM
-  // icon on every tick — imperceptible visually, but cuts marker recreation frequency noticeably.
-  const roundedHeading = Math.round((driverLocation?.heading ?? 0) / 5) * 5;
-  const driverIcon = useMemo(
-    () =>
-      L.divIcon({
-        html: driverIconHtml(roundedHeading, isOnline, tricycleUri),
-        className: 'trivora-driver-marker-icon',
-        iconSize: [45, 30],
-        iconAnchor: [22.5, 15],
-      }),
-    [roundedHeading, isOnline]
+  // Update onMapPress click handler
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const handler = (e: maplibregl.MapMouseEvent) => {
+      if (onMapPress) {
+        onMapPress({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+      }
+    };
+
+    map.on('click', handler);
+    return () => {
+      map.off('click', handler);
+    };
+  }, [onMapPress]);
+
+  // Update style when effectiveMapStyle changes
+  const currentStyleUrlRef = useRef(effectiveMapStyle);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    if (currentStyleUrlRef.current !== effectiveMapStyle) {
+      currentStyleUrlRef.current = effectiveMapStyle;
+      map.setStyle(effectiveMapStyle);
+    }
+  }, [effectiveMapStyle, mapReady]);
+
+  // Update pitch when effectivePitch changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    map.easeTo({ pitch: effectivePitch, duration: 400 });
+  }, [effectivePitch, mapReady]);
+
+  // Sync route coordinates
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    syncRouteLayer(map, routeCoordinates || [], isFallbackRoute);
+  }, [routeCoordinates, isFallbackRoute, mapReady, syncRouteLayer]);
+
+  // Driver vehicle marker
+  const roundedHeading = driverLocation ? Math.round(driverLocation.heading / 5) * 5 : 0;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (showDriverMarker && driverLocation) {
+      if (!driverMarkerRef.current) {
+        const el = document.createElement('div');
+        el.className = 'trivora-driver-marker-icon';
+        el.innerHTML = driverIconHtml(roundedHeading, isOnline, tricycleUri);
+        driverMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([driverLocation.lng, driverLocation.lat])
+          .addTo(map);
+      } else {
+        driverMarkerRef.current.setLngLat([driverLocation.lng, driverLocation.lat]);
+        const el = driverMarkerRef.current.getElement();
+        if (el) el.innerHTML = driverIconHtml(roundedHeading, isOnline, tricycleUri);
+      }
+    } else if (driverMarkerRef.current) {
+      driverMarkerRef.current.remove();
+      driverMarkerRef.current = null;
+    }
+  }, [showDriverMarker, driverLocation?.lat, driverLocation?.lng, roundedHeading, isOnline]);
+
+  // Target pin
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (target) {
+      const isPickup = target.kind === 'pickup';
+      const iconHtml = isPickup ? PICKUP_ICON_HTML : DROPOFF_ICON_HTML;
+
+      if (!targetMarkerRef.current) {
+        const el = document.createElement('div');
+        el.className = 'trivora-marker-icon';
+        el.innerHTML = iconHtml;
+        targetMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([target.lng, target.lat])
+          .addTo(map);
+      } else {
+        targetMarkerRef.current.setLngLat([target.lng, target.lat]);
+        const el = targetMarkerRef.current.getElement();
+        if (el) el.innerHTML = iconHtml;
+      }
+    } else if (targetMarkerRef.current) {
+      targetMarkerRef.current.remove();
+      targetMarkerRef.current = null;
+    }
+  }, [target?.lat, target?.lng, target?.kind]);
+
+  // Trip dropoff pin
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (tripDropoff) {
+      if (!tripDropoffMarkerRef.current) {
+        const el = document.createElement('div');
+        el.className = 'trivora-marker-icon';
+        el.innerHTML = DROPOFF_ICON_HTML;
+        tripDropoffMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([tripDropoff.lng, tripDropoff.lat])
+          .addTo(map);
+      } else {
+        tripDropoffMarkerRef.current.setLngLat([tripDropoff.lng, tripDropoff.lat]);
+      }
+    } else if (tripDropoffMarkerRef.current) {
+      tripDropoffMarkerRef.current.remove();
+      tripDropoffMarkerRef.current = null;
+    }
+  }, [tripDropoff?.lat, tripDropoff?.lng]);
+
+  // Pickup location marker
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (pickupLocation) {
+      if (!pickupMarkerRef.current) {
+        const el = document.createElement('div');
+        el.className = 'trivora-marker-icon';
+        el.innerHTML = PICKUP_ICON_HTML;
+        pickupMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([pickupLocation.lng, pickupLocation.lat])
+          .addTo(map);
+      } else {
+        pickupMarkerRef.current.setLngLat([pickupLocation.lng, pickupLocation.lat]);
+      }
+    } else if (pickupMarkerRef.current) {
+      pickupMarkerRef.current.remove();
+      pickupMarkerRef.current = null;
+    }
+  }, [pickupLocation?.lat, pickupLocation?.lng]);
+
+  // Pin location marker (manual ride destination pin)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (pinLocation) {
+      if (!pinMarkerRef.current) {
+        const el = document.createElement('div');
+        el.className = 'trivora-marker-icon';
+        el.innerHTML = DROPOFF_ICON_HTML;
+        pinMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([pinLocation.lng, pinLocation.lat])
+          .addTo(map);
+      } else {
+        pinMarkerRef.current.setLngLat([pinLocation.lng, pinLocation.lat]);
+      }
+    } else if (pinMarkerRef.current) {
+      pinMarkerRef.current.remove();
+      pinMarkerRef.current = null;
+    }
+  }, [pinLocation?.lat, pinLocation?.lng]);
+
+  // Camera framing logic
+  const frameRelevantPoints = useCallback(
+    (animated: boolean) => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      const duration = animated ? 500 : 0;
+
+      // Dispatch / request screen: frame entire trip (target pickup + tripDropoff + route)
+      if (target && tripDropoff) {
+        const points = [
+          { lat: target.lat, lng: target.lng },
+          { lat: tripDropoff.lat, lng: tripDropoff.lng },
+        ];
+        if (routeCoordinates && routeCoordinates.length > 0) {
+          const step = Math.max(1, Math.ceil(routeCoordinates.length / MAX_FIT_ROUTE_POINTS));
+          routeCoordinates.forEach((c, i) => {
+            if (i % step === 0 || i === routeCoordinates.length - 1) points.push({ lat: c.lat, lng: c.lng });
+          });
+        }
+        const b = boundsOf(points);
+        map.fitBounds(
+          [
+            [b[0], b[1]],
+            [b[2], b[3]],
+          ],
+          { padding: tripFitPadding, pitch: effectivePitch, duration }
+        );
+        lastFramedRef.current = driverLocation ? { lat: driverLocation.lat, lng: driverLocation.lng } : null;
+        return;
+      }
+
+      // Ride target (e.g. En route pickup or in-transit dropoff)
+      if (target) {
+        if (!driverLocation) {
+          map.easeTo({ center: [target.lng, target.lat], zoom: 16, padding: { top: 0, right: 0, bottom: 0, left: 0 }, pitch: effectivePitch, duration });
+        } else {
+          const b = boundsOf([
+            { lat: target.lat, lng: target.lng },
+            { lat: driverLocation.lat, lng: driverLocation.lng },
+          ]);
+          map.fitBounds(
+            [
+              [b[0], b[1]],
+              [b[2], b[3]],
+            ],
+            { padding: edgePadding, pitch: effectivePitch, duration }
+          );
+        }
+        lastFramedRef.current = driverLocation ? { lat: driverLocation.lat, lng: driverLocation.lng } : null;
+        return;
+      }
+
+      // Home (no target): center on driver's own position
+      if (driverLocation) {
+        homeFramedRef.current = { lat: driverLocation.lat, lng: driverLocation.lng };
+        map.easeTo({
+          center: [driverLocation.lng, driverLocation.lat],
+          zoom: 16,
+          padding: edgePadding,
+          pitch: effectivePitch,
+          duration,
+        });
+      }
+    },
+    [target, tripDropoff, routeCoordinates, driverLocation, tripFitPadding, edgePadding, effectivePitch]
   );
 
-  const pickupPinIcon = useMemo(
-    () => makeDivIcon(PICKUP_ICON_HTML, 22, true),
-    []
-  );
+  // Auto-frame on target / dropoff changes
+  useEffect(() => {
+    if (!mapReady) return;
+    frameRelevantPoints(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReady, target?.lat, target?.lng, tripDropoff?.lat, tripDropoff?.lng, topInset, bottomInset]);
 
-  const dropoffPinIcon = useMemo(
-    () => makeDivIcon(DROPOFF_ICON_HTML, 32, true),
-    []
-  );
+  // Recenter signals
+  useEffect(() => {
+    if (!mapReady || externalRecenterSignal === undefined) return;
+    frameRelevantPoints(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalRecenterSignal]);
 
-  const targetIcon = useMemo(() => {
-    if (!target) return null;
-    return target.kind === 'pickup' ? pickupPinIcon : dropoffPinIcon;
-  }, [target?.kind, pickupPinIcon, dropoffPinIcon]);
+  // Follow driver during ride
+  useEffect(() => {
+    if (!mapReady || !target || !driverLocation || !lastFramedRef.current) return;
+    const moved = haversineKm(lastFramedRef.current, driverLocation);
+    if (moved >= REFRAME_THRESHOLD_KM) frameRelevantPoints(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverLocation?.lat, driverLocation?.lng]);
 
-  const handleRecenter = () => {
+  // Follow driver on Home
+  useEffect(() => {
+    if (!mapReady || target || !driverLocation || !isFollowingRef.current) return;
+    const framed = homeFramedRef.current;
+    if (!framed) {
+      frameRelevantPoints(false);
+      return;
+    }
+    const moved = haversineKm(framed, driverLocation);
+    if (moved >= HOME_RECENTER_THRESHOLD_KM) {
+      frameRelevantPoints(true);
+    }
+  }, [driverLocation?.lat, driverLocation?.lng, mapReady, target, frameRelevantPoints]);
+
+  const handleFocus = () => {
+    if (!driverLocation) return;
+    userMovedRef.current = false;
+    isFollowingRef.current = true;
     setIsFollowing(true);
-    setInternalRecenterSignal((n) => n + 1);
-    onRecenter?.();
+    frameRelevantPoints(true);
   };
 
-  // Web (Leaflet) needs a real centre to create the map: the driver, else the ride target (a real
-  // booking point). With neither it keeps the existing empty container (the native maps mount
-  // immediately — see TrivoraDriverMap.native).
-  const initialCenter = driverLocation ?? target;
-  if (!initialCenter) {
-    return <View style={[styles.container, style]} />;
-  }
+  const handleRecenter = () => {
+    userMovedRef.current = false;
+    isFollowingRef.current = true;
+    setIsFollowing(true);
+    frameRelevantPoints(true);
+    if (onRecenter) onRecenter();
+  };
 
   return (
     <View style={[styles.container, style]}>
-      <MapContainer
-        center={[initialCenter.lat, initialCenter.lng]}
-        zoom={16}
-        zoomControl={false}
-        style={styles.leafletContainer as any}
-      >
-        <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+      {/* MapLibre Web GL Map Container */}
+      <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }} />
 
-        <MapController
-          driver={driverLocation}
-          target={target}
-          tripDropoff={tripDropoff}
-          tripRoute={tripDropoff ? routeCoordinates : null}
-          topInset={topInset}
-          bottomInset={bottomInset}
-          recenterSignal={effectiveRecenterSignal}
-          pinLocation={pinLocation}
-          pickupLocation={pickupLocation}
-          routeCoordinates={routeCoordinates}
-          onUserMoved={handleUserMoved}
-        />
-
-        {routeCoordinates && routeCoordinates.length > 1 && (
-          <Polyline
-            positions={routeCoordinates.map((p) => [p.lat, p.lng])}
-            pathOptions={{
-              color: COLORS.primary,
-              weight: 4,
-              dashArray: routeSource === 'fallback' ? '8 6' : undefined,
-            }}
-          />
-        )}
-
-        {showDriverMarker && driverLocation && <Marker position={[driverLocation.lat, driverLocation.lng]} icon={driverIcon} />}
-        {pickupLocation && <Marker position={[pickupLocation.lat, pickupLocation.lng]} icon={pickupPinIcon} />}
-
-        {target && targetIcon && <Marker position={[target.lat, target.lng]} icon={targetIcon} />}
-        {tripDropoff && <Marker position={[tripDropoff.lat, tripDropoff.lng]} icon={dropoffPinIcon} />}
-        {pinLocation && <Marker position={[pinLocation.lat, pinLocation.lng]} icon={dropoffPinIcon} />}
-        {onMapPress && <MapPressHandler onMapPress={onMapPress} />}
-      </MapContainer>
-
-      {(focusCurrentLocation || (showCompass && !target)) && (
+      {/* Focus Current Location Button (Home only) */}
+      {focusCurrentLocation && !target && (
         <TouchableOpacity
-          style={[
-            styles.focusButton,
-            { bottom: bottomInset + 12 },
-            isFollowing && styles.focusButtonActive,
-            !driverLocation && styles.focusButtonDisabled,
-          ]}
-          onPress={handleRecenter}
-          disabled={!driverLocation}
+          style={[styles.focusButton, { bottom: bottomInset + 12 }, isFollowing && styles.focusButtonActive]}
+          onPress={handleFocus}
           activeOpacity={0.8}
-          accessibilityRole="button"
           accessibilityLabel="Focus current location"
         >
           <LocateFixed size={18} color={isFollowing ? '#FFFFFF' : COLORS.primary} />
         </TouchableOpacity>
       )}
 
-      {showCompass && target && (
+      {/* Floating Compass / Recenter Button */}
+      {showCompass && (
         <TouchableOpacity style={styles.compassButton} onPress={handleRecenter} activeOpacity={0.8}>
           <Compass size={18} color="#D97706" />
         </TouchableOpacity>
@@ -409,14 +535,9 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
   },
-  leafletContainer: {
-    height: '100%',
-    width: '100%',
-  },
   focusButton: {
     position: 'absolute',
     right: 16,
-    zIndex: 500,
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -425,14 +546,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    ...SHADOWS.md,
+    ...SHADOWS.sm,
+    zIndex: 10,
   },
   focusButtonActive: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
-  },
-  focusButtonDisabled: {
-    opacity: 0.5,
   },
   compassButton: {
     position: 'absolute',
@@ -447,6 +566,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8DEC8',
     ...SHADOWS.sm,
-    zIndex: 500,
+    zIndex: 10,
   },
 });

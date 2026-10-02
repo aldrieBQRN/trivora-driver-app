@@ -123,6 +123,8 @@ export default function DriverRideDetailsScreen({ item, onBack }: DriverRideDeta
                 showDriverMarker={false}
                 isOnline
                 showCompass={false}
+                mapVariant="bright"
+                pitch={0}
                 target={{
                   lat: item.pickupLat as number,
                   lng: item.pickupLng as number,

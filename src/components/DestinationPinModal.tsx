@@ -148,6 +148,8 @@ export default function DestinationPinModal({ visible, onClose, onConfirm, initi
             showDriverMarker={false}
             pickupLocation={driverLocation}
             showCompass={false}
+            mapVariant="bright"
+            pitch={0}
             onMapPress={handlePress}
             pinLocation={pin}
             routeCoordinates={routeCoordinates}

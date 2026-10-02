@@ -11,7 +11,7 @@ const TrivoraDriverMapNative: typeof import('./TrivoraDriverMap.native').default
 export type { TrivoraDriverMapProps } from './TrivoraDriverMap.types';
 
 /**
- * Driver Home's map — the same map engine and CARTO Voyager visual language as the
+ * Driver Home's map — the same MapLibre vector engine and OpenFreeMap visual language as the
  * Passenger app's TrivoraMap (MapLibre on native, Leaflet on web), scoped to
  * what monitoring your own live position needs rather than a pickup/dropoff route.
  */

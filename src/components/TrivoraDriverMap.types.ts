@@ -60,5 +60,11 @@ export interface TrivoraDriverMapProps {
    * where the driver's location is the pickup point and represented as a green pickup pin instead of
    * the vehicle marker. */
   pickupLocation?: RouteLatLng | null;
+  /** OpenFreeMap style variant: 'bright' for 2D Home & Pin Location, 'liberty' for 3D active rides. */
+  mapVariant?: 'bright' | 'liberty';
+  /** Explicit style URL override if needed. Defaults to OpenFreeMap Bright or Liberty. */
+  mapStyleUrl?: string;
+  /** Camera pitch in degrees (0 for 2D top-down, ~45°-55° for 3D navigation feel). */
+  pitch?: number;
   style?: any;
 }
