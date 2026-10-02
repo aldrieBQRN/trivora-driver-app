@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { DriverProfile, IncomingBooking, ViolationCitation, QrSession, QrSessionPassenger, ManualRide, ManualRideQuote, DriverGcashQrStatus, PaymentStatus } from '../types';
+import { DriverProfile, IncomingBooking, ViolationCitation, QrSession, QrSessionPassenger, ManualRide, ManualRideQuote, DriverGcashQrStatus, PaymentStatus, DriverQrCodeData } from '../types';
 
 function getDefaultApiBaseUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
@@ -319,6 +319,10 @@ export const driverApi = {
     return request('/driver/qr-session/end', { method: 'POST' });
   },
 
+  getDriverQrCode: async (): Promise<DriverQrCodeData> => {
+    return request<DriverQrCodeData>('/driver/qr-code');
+  },
+
   // --- Manual Ride — a trip the driver records for a walk-in passenger with no app. The server
   // sets the pick-up (the driver's own fresh GPS), distance and fare; the app sends only the
   // destination and party size, then the signed quote exactly as returned. {booking} is the code. ---
@@ -552,6 +556,9 @@ export function mapAuthResponseToDriverProfile(res: any, fallbackEmail?: string)
       model: tricycle.make_model || `${tricycle.make || ''} ${tricycle.model || ''}`.trim() || 'N/A',
       iotDeviceId: undefined,
       activeTrackingMode: tricycle.active_tracking_mode === 'iot_device' ? 'iot_device' : 'mobile_app',
+      unitCode: tricycle.unit_code || (tricycle.id ? `TRV-${String(tricycle.id).padStart(3, '0')}` : 'N/A'),
+      stickerNumber: tricycle.sticker_number || tricycle.coding_scheme_number || null,
+      passengerCapacity: tricycle.passenger_capacity ?? null,
     },
     rating: Number(rawDriver.rating ?? 5.0),
     totalTrips: Number(rawDriver.total_trips ?? 0),

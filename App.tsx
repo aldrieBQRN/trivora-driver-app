@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Platform, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -11,7 +11,7 @@ import { ManualRideProvider, useManualRide } from './src/context/ManualRideConte
 import { NetworkProvider } from './src/context/NetworkContext';
 import { ToastProvider } from './src/components/Toast';
 import OfflineBanner from './src/components/OfflineBanner';
-import { COLORS, RADIUS, SPACING } from './src/constants/theme';
+import { COLORS } from './src/constants/theme';
 
 const DRIVER_ONBOARDING_STORAGE_KEY = '@trivora_driver_onboarding_done';
 
@@ -33,34 +33,25 @@ import ViolationsHistoryScreen from './src/screens/ViolationsHistoryScreen';
 import RideHistoryScreen from './src/screens/RideHistoryScreen';
 import DriverProfileScreen from './src/screens/DriverProfileScreen';
 import TelematicsSettingsScreen from './src/screens/TelematicsSettingsScreen';
+import DriverQrCodeScreen from './src/screens/DriverQrCodeScreen';
 import DriverQrSessionScreen from './src/screens/DriverQrSessionScreen';
 import DriverManualRideScreen from './src/screens/DriverManualRideScreen';
 
-import { Home, Receipt, ShieldAlert, TrendingUp, User, LucideIcon } from 'lucide-react-native';
+import { Home, History, ShieldAlert, Wallet, User } from 'lucide-react-native';
+import CurvedTabBar, { CurvedTab } from './src/components/CurvedTabBar';
 import { PendingAccountInfo } from './src/types';
 
 type AuthScreenKey = 'splash' | 'login' | 'verify' | 'register' | 'set_password';
 type PrimaryTab = 'home' | 'trips' | 'violations' | 'earnings' | 'profile';
-type PushedScreen = 'tracking_settings' | null;
 
-interface TabButtonProps {
-  label: string;
-  icon: LucideIcon;
-  isActive: boolean;
-  onPress: () => void;
-}
-
-function TabButton({ label, icon: Icon, isActive, onPress }: TabButtonProps) {
-  return (
-    <TouchableOpacity style={styles.tabButton} onPress={onPress} activeOpacity={0.6}>
-      <View style={styles.tabIndicatorTrack}>
-        {isActive && <View style={styles.tabIndicator} />}
-      </View>
-      <Icon size={22} color={isActive ? COLORS.primary : COLORS.textMuted} strokeWidth={isActive ? 2.2 : 1.8} />
-      <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
+const PRIMARY_TABS: CurvedTab<PrimaryTab>[] = [
+  { key: 'home', label: 'Home', icon: Home },
+  { key: 'trips', label: 'Rides', icon: History },
+  { key: 'violations', label: 'Violations', icon: ShieldAlert },
+  { key: 'earnings', label: 'Earnings', icon: Wallet },
+  { key: 'profile', label: 'Profile', icon: User },
+];
+type PushedScreen = 'tracking_settings' | 'qr_code' | null;
 
 function DriverAppNavigator() {
   const { isAuthenticated, isRestoring } = useDriverAuth();
@@ -257,6 +248,10 @@ function DriverAppNavigator() {
       return <TelematicsSettingsScreen onBack={() => setPushedScreen(null)} />;
     }
 
+    if (pushedScreen === 'qr_code') {
+      return <DriverQrCodeScreen onBack={() => setPushedScreen(null)} />;
+    }
+
     if (activeTab === 'trips') {
       return <RideHistoryScreen />;
     }
@@ -270,7 +265,12 @@ function DriverAppNavigator() {
     }
 
     if (activeTab === 'profile') {
-      return <DriverProfileScreen onOpenTrackingSettings={() => setPushedScreen('tracking_settings')} />;
+      return (
+        <DriverProfileScreen
+          onOpenTrackingSettings={() => setPushedScreen('tracking_settings')}
+          onOpenQrCode={() => setPushedScreen('qr_code')}
+        />
+      );
     }
 
     return (
@@ -310,18 +310,12 @@ function DriverAppNavigator() {
             inset where there is one, but never let the bar sit flush against the edge on
             devices without one (most Android phones have insets.bottom === 0). */}
         {isTabBarVisible && (
-          <View
-            style={[
-              styles.tabBar,
-              { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 24 : 14) },
-            ]}
-          >
-            <TabButton label="Home" icon={Home} isActive={activeTab === 'home'} onPress={() => goToTab('home')} />
-            <TabButton label="Rides" icon={Receipt} isActive={activeTab === 'trips'} onPress={() => goToTab('trips')} />
-            <TabButton label="Violations" icon={ShieldAlert} isActive={activeTab === 'violations'} onPress={() => goToTab('violations')} />
-            <TabButton label="Earnings" icon={TrendingUp} isActive={activeTab === 'earnings'} onPress={() => goToTab('earnings')} />
-            <TabButton label="Profile" icon={User} isActive={activeTab === 'profile'} onPress={() => goToTab('profile')} />
-          </View>
+          <CurvedTabBar
+            tabs={PRIMARY_TABS}
+            activeKey={activeTab}
+            onSelect={goToTab}
+            bottomInset={Math.max(insets.bottom, Platform.OS === 'ios' ? 22 : 12)}
+          />
         )}
       </View>
     </SafeAreaView>
@@ -367,44 +361,5 @@ const styles = StyleSheet.create({
   },
   screenViewport: {
     flex: 1,
-  },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.background,
-    paddingTop: 8,
-    paddingHorizontal: SPACING.xs,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    minHeight: Platform.OS === 'ios' ? 62 : 64,
-  },
-  tabButton: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingVertical: 4,
-    gap: 5,
-  },
-  tabIndicatorTrack: {
-    height: 3,
-    width: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabIndicator: {
-    height: 3,
-    width: 20,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primary,
-  },
-  tabLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textMuted,
-  },
-  tabLabelActive: {
-    color: COLORS.primary,
-    fontWeight: '700',
   },
 });

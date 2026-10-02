@@ -108,6 +108,8 @@ export default function DriverEnRoutePickupScreen() {
         driverLocation={driverLocation}
         isOnline
         showCompass
+        mapVariant="liberty"
+        pitch={50}
         target={
           pickupLat != null && pickupLng != null
             ? { lat: pickupLat, lng: pickupLng, label: booking.pickup, kind: 'pickup' }

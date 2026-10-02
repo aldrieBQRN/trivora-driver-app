@@ -22,6 +22,22 @@ export interface TricycleUnit {
   model: string;
   iotDeviceId?: string;
   activeTrackingMode: 'mobile_app' | 'iot_device';
+  unitCode?: string;
+  stickerNumber?: string | null;
+  passengerCapacity?: number | null;
+}
+
+export interface DriverQrCodeData {
+  unit_code: string;
+  sticker_number: string | null;
+  plate_number: string;
+  passenger_capacity: number | null;
+  qr_token: string;
+  qr_url: string;
+  status: 'ready' | 'capacity_required' | 'not_ready';
+  status_label: string;
+  note: string;
+  print_url?: string;
 }
 
 export interface DriverProfile {

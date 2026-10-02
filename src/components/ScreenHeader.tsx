@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import type { LucideIcon } from 'lucide-react-native';
 import { ArrowLeft } from 'lucide-react-native';
-import { COLORS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import FloatingIconButton from './FloatingIconButton';
 
 interface ScreenHeaderProps {
@@ -23,6 +23,9 @@ interface ScreenHeaderProps {
   /** Reports the header's actual rendered height — e.g. so a map underneath an overlay header
    * can compute how much of its top edge is actually covered. */
   onLayout?: (e: LayoutChangeEvent) => void;
+  /** Opaque overlay only: rounded bottom corners and a soft shadow instead of a hard bottom rule
+   * (Home, where the header floats over the map). */
+  rounded?: boolean;
 }
 
 /**
@@ -44,6 +47,7 @@ export default function ScreenHeader({
   variant = 'solid',
   tone = 'blur',
   onLayout,
+  rounded = false,
 }: ScreenHeaderProps) {
   const isOverlay = variant === 'overlay';
   const isOpaqueOverlay = isOverlay && tone === 'opaque';
@@ -80,7 +84,7 @@ export default function ScreenHeader({
 
   if (isOpaqueOverlay) {
     return (
-      <View style={[styles.blurContainer, styles.opaqueContainer]} onLayout={onLayout}>
+      <View style={[styles.blurContainer, rounded ? styles.roundedContainer : styles.opaqueContainer]} onLayout={onLayout}>
         {content}
       </View>
     );
@@ -121,6 +125,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
     ...SHADOWS.sm,
+  },
+  roundedContainer: {
+    backgroundColor: COLORS.background,
+    borderBottomLeftRadius: RADIUS.xxl,
+    borderBottomRightRadius: RADIUS.xxl,
+    ...SHADOWS.md,
   },
   row: {
     flexDirection: 'row',

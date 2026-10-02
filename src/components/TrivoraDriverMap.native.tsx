@@ -46,27 +46,12 @@ const HOME_ZOOM_DELTA = 0.004;
  * marker, so the camera doesn't twitch on every tick. */
 const HOME_FOLLOW_MIN_MOVE_KM = 0.003;
 
-const CARTO_URL_TEMPLATE =
-  'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=cb1_3qo7_1_ac41fdc9883213d666d06544';
-
-// CARTO Voyager raster basemap as a MapLibre style — the whole map is the CARTO tiles (no Google
-// Maps SDK, no Google API key). Same tile URL/key/look as the Passenger app and the web map.
-const CARTO_MAP_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    carto: {
-      type: 'raster',
-      tiles: [CARTO_URL_TEMPLATE],
-      tileSize: 256,
-      maxzoom: 19,
-      attribution: '© OpenStreetMap contributors © CARTO',
-    },
-  },
-  layers: [
-    { id: 'background', type: 'background', paint: { 'background-color': '#FAF6EE' } },
-    { id: 'carto', type: 'raster', source: 'carto' },
-  ],
-};
+import {
+  MAP_STYLES,
+  ACTIVE_RIDE_PITCH,
+  TOP_DOWN_PITCH,
+  MapVariant,
+} from '../constants/openFreeMap';
 
 const NO_PADDING = { top: 0, right: 0, bottom: 0, left: 0 };
 /** Width (dp) assumed until the map's real width is measured. */
@@ -121,8 +106,18 @@ export default function TrivoraDriverMapNative({
   onMapPress,
   pinLocation,
   pickupLocation,
+  mapVariant,
+  mapStyleUrl,
+  pitch,
   style,
 }: TrivoraDriverMapProps) {
+  // Map style and camera pitch presentation:
+  // Active ride screens (en route to pickup, in transit to destination, active manual ride) use OpenFreeMap Liberty in 3D pitched mode (~50°).
+  // Home, pin location, dispatch, and review screens use OpenFreeMap Bright in 2D top-down mode (0°).
+  const effectiveVariant: MapVariant = mapVariant ?? (pitch && pitch > 0 ? 'liberty' : 'bright');
+  const effectiveMapStyle = mapStyleUrl ?? MAP_STYLES[effectiveVariant];
+  const effectivePitch = pitch ?? (effectiveVariant === 'liberty' ? ACTIVE_RIDE_PITCH : TOP_DOWN_PITCH);
+
   const cameraRef = useRef<CameraRef | null>(null);
   // Captured once at mount: the Camera's initialViewState only applies to its first render.
   const initialCenterRef = useRef(
@@ -191,7 +186,7 @@ export default function TrivoraDriverMapNative({
             if (i % step === 0 || i === routeCoordinates.length - 1) points.push({ lat: c.lat, lng: c.lng });
           });
         }
-        cameraRef.current.fitBounds(boundsOf(points), { padding: tripFitPadding, duration });
+        cameraRef.current.fitBounds(boundsOf(points), { padding: tripFitPadding, pitch: effectivePitch, duration });
         lastFramedRef.current = driverLocation ? { lat: driverLocation.lat, lng: driverLocation.lng } : null;
         return;
       }
@@ -199,19 +194,19 @@ export default function TrivoraDriverMapNative({
       // Driver + target. Before the first GPS fix only the target is framed; the driver is added
       // by the move-reframe effect below once a real position exists.
       if (!driverLocation) {
-        cameraRef.current.easeTo({ center: [target.lng, target.lat], zoom: homeZoom, padding: NO_PADDING, duration });
+        cameraRef.current.easeTo({ center: [target.lng, target.lat], zoom: homeZoom, padding: NO_PADDING, pitch: effectivePitch, duration });
       } else {
         cameraRef.current.fitBounds(
           boundsOf([
             { lat: target.lat, lng: target.lng },
             { lat: driverLocation.lat, lng: driverLocation.lng },
           ]),
-          { padding: edgePadding, duration }
+          { padding: edgePadding, pitch: effectivePitch, duration }
         );
       }
       lastFramedRef.current = driverLocation ? { lat: driverLocation.lat, lng: driverLocation.lng } : null;
     },
-    [target?.lat, target?.lng, tripDropoff?.lat, tripDropoff?.lng, routeCoordinates, driverLocation?.lat, driverLocation?.lng, edgePadding, tripFitPadding, homeZoom]
+    [target?.lat, target?.lng, tripDropoff?.lat, tripDropoff?.lng, routeCoordinates, driverLocation?.lat, driverLocation?.lng, edgePadding, tripFitPadding, homeZoom, effectivePitch]
   );
 
   /** Home only (no ride target). Centers the camera on EXACTLY the driver's coordinate — the same
@@ -237,7 +232,7 @@ export default function TrivoraDriverMapNative({
           `padding=${JSON.stringify(edgePadding)} zoom=${homeZoom.toFixed(2)}`
       );
     }
-    camera.easeTo({ center: [lng, lat], zoom: homeZoom, padding: edgePadding, duration: animated ? 500 : 0 });
+    camera.easeTo({ center: [lng, lat], zoom: homeZoom, padding: edgePadding, pitch: effectivePitch, duration: animated ? 500 : 0 });
   };
 
   // Home only — frame once the map has finished loading (a camera move issued before then can be
@@ -377,8 +372,9 @@ export default function TrivoraDriverMapNative({
     >
       <Map
         style={StyleSheet.absoluteFillObject}
-        mapStyle={CARTO_MAP_STYLE}
-        attribution={false}
+        mapStyle={effectiveMapStyle}
+        attribution={true}
+        attributionPosition={{ bottom: 8, left: 8 }}
         logo={false}
         compass={false}
         onDidFinishLoadingMap={() => {
@@ -414,14 +410,16 @@ export default function TrivoraDriverMapNative({
               { lat: tripDropoff.lat, lng: tripDropoff.lng },
             ]),
             padding: tripFitPadding,
+            pitch: effectivePitch,
           } : initialCenter ? {
             center: [initialCenter.lng, initialCenter.lat],
             zoom: homeZoom,
             padding: target ? NO_PADDING : edgePadding,
+            pitch: effectivePitch,
           } : undefined}
         />
 
-        {/* Route: a style layer, so it draws above the CARTO raster and below the markers (which
+        {/* Route: a style layer, so it draws above the OpenFreeMap basemap and below the markers (which
             are native views on top of the map). */}
         {routeCoordinates && routeCoordinates.length > 1 && (
           <GeoJSONSource

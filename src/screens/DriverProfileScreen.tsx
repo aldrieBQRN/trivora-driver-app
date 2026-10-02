@@ -25,10 +25,12 @@ import Button from '../components/Button';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmModal from '../components/ConfirmModal';
 import DriverGcashSettingsModal from '../components/DriverGcashSettingsModal';
+import { useToast } from '../components/Toast';
 import { driverApi } from '../services/api';
 
 interface DriverProfileScreenProps {
   onOpenTrackingSettings: () => void;
+  onOpenQrCode: () => void;
 }
 
 // Help Center / About Trivora have no structured contact fields anywhere in the app (no
@@ -42,7 +44,11 @@ const STATIC_MENU_COPY: Record<string, string> = {
 
 type ExpandableSection = 'info' | 'vehicle' | 'help' | 'about' | null;
 
-export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverProfileScreenProps) {
+export default function DriverProfileScreen({
+  onOpenTrackingSettings,
+  onOpenQrCode,
+}: DriverProfileScreenProps) {
+  const { showToast } = useToast();
   const { driver, logout, updateProfile, refreshProfile } = useDriverAuth();
   const { isOnline, averageRating, totalCompletedRides } = useDriverShift();
   const [expanded, setExpanded] = useState<ExpandableSection>(null);
@@ -82,6 +88,11 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
 
   const trackingModeLabel =
     driver?.tricycle?.activeTrackingMode === 'iot_device' ? 'Onboard IoT Tracker' : 'Smartphone GPS';
+
+  const unitCode =
+    driver?.tricycle?.unitCode ||
+    (driver?.tricycle?.id ? `TRV-${String(driver.tricycle.id).padStart(3, '0')}` : '—');
+  const plateNumber = driver?.tricycle?.plateNumber || '—';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -187,6 +198,17 @@ export default function DriverProfileScreen({ onOpenTrackingSettings }: DriverPr
         label="Tracking Settings"
         subtitle={trackingModeLabel}
         onPress={onOpenTrackingSettings}
+      />
+
+      <MenuRow
+        icon={QrCode}
+        label="Assigned QR Code"
+        subtitle={
+          driver?.tricycle
+            ? `Unit: ${unitCode} · Plate: ${plateNumber}`
+            : 'Walk-in Scan to Ride'
+        }
+        onPress={onOpenQrCode}
       />
 
       {/* Payments */}

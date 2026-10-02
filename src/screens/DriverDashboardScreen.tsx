@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, LayoutChangeEvent, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, LayoutChangeEvent, useWindowDimensions, Animated, Easing } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useDriverShift } from '../context/DriverShiftContext';
-import { Star, Bell, Satellite, Gauge, ShieldAlert, ChevronRight, ShieldOff, Ban, Users, Plus, Navigation, MapPin } from 'lucide-react-native';
+import { Star, Bell, Satellite, Gauge, ShieldAlert, ChevronRight, ShieldOff, Ban, Users, Plus, Navigation, MapPin, Wallet, CheckCircle2, Power, PowerOff } from 'lucide-react-native';
 import { useQrSession } from '../context/QrSessionContext';
 import { useManualRide } from '../context/ManualRideContext';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
@@ -33,6 +33,40 @@ const WIDE_WIDTH = 720;
 const PANEL_MAX_WIDTH = 560;
 /** Below this width the Manual Ride button is text-only. */
 const NARROW_WIDTH = 380;
+
+/** Status dot; while online a soft ring pulses out from it to read as "live". */
+function LiveDot({ online }: { online: boolean }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!online) {
+      pulse.stopAnimation();
+      pulse.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.timing(pulse, { toValue: 1, duration: 1600, easing: Easing.out(Easing.ease), useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [online, pulse]);
+
+  return (
+    <View style={styles.liveDotWrap}>
+      {online && (
+        <Animated.View
+          style={[
+            styles.liveRing,
+            {
+              opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),
+              transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 2.6] }) }],
+            },
+          ]}
+        />
+      )}
+      <View style={[styles.heroDot, online ? styles.heroDotOnline : styles.heroDotOffline]} />
+    </View>
+  );
+}
 
 export default function DriverDashboardScreen({
   onOpenProfile,
@@ -63,6 +97,12 @@ export default function DriverDashboardScreen({
   } = useDriverShift();
   const insets = useSafeAreaInsets();
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // Panel eases up into place when Home opens (transform only, so its measured height is unchanged).
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(enter, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [enter]);
 
   // Measured from actual layout rather than guessed, so the map keeps the driver's own location
   // centered in the area actually visible below the header.
@@ -149,6 +189,8 @@ export default function DriverDashboardScreen({
         driverLocation={driverLocation}
         isOnline={isOnline}
         focusCurrentLocation
+        mapVariant="bright"
+        pitch={0}
         topInset={headerHeight}
         bottomInset={bottomInset}
         style={StyleSheet.absoluteFillObject}
@@ -160,6 +202,7 @@ export default function DriverDashboardScreen({
       <ScreenHeader
         variant="overlay"
         tone="opaque"
+        rounded
         onLayout={handleHeaderLayout}
         title={`${greeting}, ${firstName}`}
         subtitle={
@@ -172,11 +215,21 @@ export default function DriverDashboardScreen({
         }
         leftSlot={
           <TouchableOpacity onPress={onOpenProfile} activeOpacity={0.8} accessibilityLabel="Open profile">
-            <Avatar name={driver?.name || 'Juan Dela Cruz'} imageUri={driver?.avatarUrl} tone="driver" size={40} />
+            <View>
+              <Avatar name={driver?.name || 'Juan Dela Cruz'} imageUri={driver?.avatarUrl} tone="driver" size={40} />
+              {/* Live work status at a glance, on the avatar */}
+              <View style={[styles.avatarDot, isOnline ? styles.avatarDotOnline : styles.avatarDotOffline]} />
+            </View>
           </TouchableOpacity>
         }
         rightSlot={
-          <FloatingIconButton onPress={() => setShowNotifications(true)} hasBadge={hasUnread} accessibilityLabel="Notifications">
+          <FloatingIconButton
+            onPress={() => setShowNotifications(true)}
+            hasBadge={hasUnread}
+            accessibilityLabel="Notifications"
+            size={40}
+            style={styles.headerIconBtn}
+          >
             <Bell size={17} color={COLORS.textPrimary} />
           </FloatingIconButton>
         }
@@ -190,12 +243,17 @@ export default function DriverDashboardScreen({
           accessibilityRole="button"
           accessibilityLabel="Open ride session"
         >
-          <Users size={16} color={COLORS.textInverse} />
-          <Text style={styles.qrBarText} numberOfLines={1}>
-            Ride session · {qrSession.session.seats_used}/{qrSession.session.capacity ?? '—'}{' '}
-            {qrSession.session.status === 'boarding' ? 'waiting to start' : qrSession.session.status === 'completed' ? 'ready to end' : 'in progress'}
-          </Text>
-          <ChevronRight size={16} color={COLORS.textInverse} />
+          <View style={styles.barIcon}>
+            <Users size={16} color={COLORS.textInverse} />
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.qrBarText} numberOfLines={1}>Ride session</Text>
+            <Text style={styles.qrBarSub} numberOfLines={1}>
+              {qrSession.session.seats_used}/{qrSession.session.capacity ?? '—'} seats ·{' '}
+              {qrSession.session.status === 'boarding' ? 'Waiting to start' : qrSession.session.status === 'completed' ? 'Ready to end' : 'In progress'}
+            </Text>
+          </View>
+          <ChevronRight size={18} color={COLORS.textInverse} />
         </TouchableOpacity>
       )}
 
@@ -207,19 +265,23 @@ export default function DriverDashboardScreen({
           accessibilityRole="button"
           accessibilityLabel="Open Manual Ride in progress"
         >
-          <Navigation size={16} color={COLORS.textInverse} />
-          <Text style={styles.qrBarText} numberOfLines={1}>
-            Manual Ride in progress · {manualRide.dropoff.name}
-          </Text>
-          <ChevronRight size={16} color={COLORS.textInverse} />
+          <View style={styles.barIcon}>
+            <Navigation size={16} color={COLORS.textInverse} />
+          </View>
+          <View style={styles.flex}>
+            <Text style={styles.qrBarText} numberOfLines={1}>Manual Ride in progress</Text>
+            <Text style={styles.qrBarSub} numberOfLines={1}>To {manualRide.dropoff.name}</Text>
+          </View>
+          <ChevronRight size={18} color={COLORS.textInverse} />
         </TouchableOpacity>
       )}
 
       {/* Home panel — hugs its content (no fixed-percentage sheet, so no dead space on tall
           phones and nothing clipped on short ones) and reports its real height to the map. On
           tablets / web it stays a readable width, centred. */}
-      <View
+      <Animated.View
         style={[
+          { opacity: enter, transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }] },
           styles.panel,
           isWide && styles.panelWide,
           { paddingBottom: insets.bottom + (isCompact ? SPACING.sm + 4 : SPACING.md + 4) },
@@ -227,8 +289,6 @@ export default function DriverDashboardScreen({
         ]}
         onLayout={handlePanelLayout}
       >
-        <View style={styles.handle} />
-
         {isRestricted && (
           <View style={[styles.statusBanner, isRevoked ? styles.statusBannerDanger : styles.statusBannerWarning]}>
             {isRevoked ? <Ban size={16} color={COLORS.dangerDark} /> : <ShieldOff size={16} color={COLORS.warning} />}
@@ -248,28 +308,31 @@ export default function DriverDashboardScreen({
           </View>
         )}
 
-        {/* Work status — the one fact that matters most, carried by type size, with the live
-            GPS state beside it instead of on a line of its own. */}
-        <View>
-          <View style={styles.statusRow}>
-            <View style={styles.flex}>
-              <Text style={styles.eyebrow}>Work status</Text>
-              <Text style={[isCompact ? styles.heroWordCompact : styles.heroWord, isOnline ? styles.heroWordOnline : styles.heroWordOffline]}>
+        {/* Work status — a small status pill (the only colour) and a plain headline; GPS source
+            sits quietly beside the pill. */}
+        <View style={styles.statusBlock}>
+          <View style={styles.statusTopRow}>
+            <View style={[styles.statusPill, isOnline ? styles.statusPillOnline : styles.statusPillOffline]}>
+              <LiveDot online={isOnline} />
+              <Text style={[styles.statusPillText, isOnline ? styles.statusPillTextOnline : styles.statusPillTextOffline]}>
                 {isOnline ? 'Online' : 'Offline'}
               </Text>
             </View>
             {isOnline ? (
-              <View style={styles.gpsChip}>
-                <Satellite size={12} color={COLORS.success} />
-                <Text style={styles.gpsChipText}>GPS · {trackingLabel}</Text>
+              <View style={styles.gpsMeta}>
+                <Satellite size={12} color={COLORS.textSecondary} />
+                <Text style={styles.gpsMetaText}>{trackingLabel}</Text>
               </View>
             ) : null}
           </View>
+          <Text style={[styles.statusTitle, isCompact && styles.statusTitleCompact]}>
+            {isOnline ? 'Ready for ride requests' : "You're offline"}
+          </Text>
           <Text style={styles.heroSubtitle}>
             {isRestricted
               ? 'Going online is disabled while your franchise is restricted'
               : isOnline
-              ? "You're visible to nearby ride requests"
+              ? "You're visible to nearby passengers"
               : 'Go online to start receiving rides'}
           </Text>
         </View>
@@ -279,7 +342,13 @@ export default function DriverDashboardScreen({
           // without the app).
           <View style={styles.actionRow}>
             <View style={styles.flex}>
-              <Button label="Go Offline" onPress={() => setIsOnline(false)} variant="secondary" size={isCompact ? 'md' : 'lg'} />
+              <Button
+                label="Go Offline"
+                icon={isNarrow ? undefined : PowerOff}
+                onPress={() => setIsOnline(false)}
+                variant="secondary"
+                size={isCompact ? 'md' : 'lg'}
+              />
             </View>
             <View style={styles.flex}>
               <Button
@@ -293,6 +362,7 @@ export default function DriverDashboardScreen({
         ) : (
           <Button
             label={isOnline ? 'Go Offline' : 'Go Online'}
+            icon={isOnline ? PowerOff : Power}
             onPress={() => setIsOnline(!isOnline)}
             variant={isOnline ? 'secondary' : 'primary'}
             disabled={isRestricted && !isOnline}
@@ -310,39 +380,54 @@ export default function DriverDashboardScreen({
           </TouchableOpacity>
         )}
 
-        {/* Today — two tappable figures that open Earnings and Rides */}
-        <View style={styles.todayRow}>
-          <TouchableOpacity
-            style={styles.todayStat}
-            onPress={onOpenEarnings}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={`Today's earnings ₱${todayEarnings.toFixed(2)}. Open earnings`}
-          >
-            <Text style={styles.todayCaption}>Today's earnings</Text>
-            <View style={styles.todayValueRow}>
-              <Text style={[styles.todayValue, isCompact && styles.todayValueCompact]} numberOfLines={1}>
+        {/* Today — one grouped strip of three figures; earnings and rides open their screens */}
+        <View style={styles.todayBlock}>
+          <Text style={styles.eyebrow}>Today</Text>
+          <View style={styles.statsGroup}>
+            <TouchableOpacity
+              style={styles.stat}
+              onPress={onOpenEarnings}
+              activeOpacity={0.6}
+              accessibilityRole="button"
+              accessibilityLabel={`Today's earnings ₱${todayEarnings.toFixed(2)}. Open earnings`}
+            >
+              <Text style={[styles.statValue, isCompact && styles.statValueCompact]} numberOfLines={1} adjustsFontSizeToFit>
                 ₱{todayEarnings.toFixed(2)}
               </Text>
-              <ChevronRight size={16} color={COLORS.textMuted} />
+              <View style={styles.statLabelRow}>
+                <Wallet size={12} color={COLORS.textSecondary} />
+                <Text style={styles.statLabel}>Earnings</Text>
+                <ChevronRight size={12} color={COLORS.textMuted} />
+              </View>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <TouchableOpacity
+              style={styles.stat}
+              onPress={onOpenTrips}
+              activeOpacity={0.6}
+              accessibilityRole="button"
+              accessibilityLabel={`${completedTripsCount} completed rides today. Open ride history`}
+            >
+              <Text style={[styles.statValue, isCompact && styles.statValueCompact]}>{completedTripsCount}</Text>
+              <View style={styles.statLabelRow}>
+                <CheckCircle2 size={12} color={COLORS.textSecondary} />
+                <Text style={styles.statLabel}>Rides</Text>
+                <ChevronRight size={12} color={COLORS.textMuted} />
+              </View>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <View style={styles.stat} accessibilityLabel={`Rating ${averageRating != null ? averageRating.toFixed(1) : 'not yet rated'}`}>
+              <Text style={[styles.statValue, isCompact && styles.statValueCompact]}>
+                {averageRating != null ? averageRating.toFixed(1) : '—'}
+              </Text>
+              <View style={styles.statLabelRow}>
+                <Star size={12} color={COLORS.warning} fill={COLORS.warning} />
+                <Text style={styles.statLabel}>Rating</Text>
+              </View>
             </View>
-          </TouchableOpacity>
-          <View style={styles.todayDivider} />
-          <TouchableOpacity
-            style={styles.todayStat}
-            onPress={onOpenTrips}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={`${completedTripsCount} completed rides today. Open ride history`}
-          >
-            <Text style={styles.todayCaption}>Completed rides</Text>
-            <View style={styles.todayValueRow}>
-              <Text style={[styles.todayValue, isCompact && styles.todayValueCompact]}>{completedTripsCount}</Text>
-              <ChevronRight size={16} color={COLORS.textMuted} />
-            </View>
-          </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </Animated.View>
 
       <NotificationsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
     </View>
@@ -374,17 +459,38 @@ const styles = StyleSheet.create({
     zIndex: 5,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
-    minHeight: 48,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.lg,
+    gap: SPACING.sm + 4,
+    minHeight: 60,
+    paddingHorizontal: SPACING.sm + 4,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.xl,
     backgroundColor: COLORS.primary,
+    ...SHADOWS.md,
+  },
+  barIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   qrBarText: {
     ...TYPOGRAPHY.bodySmall,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.textInverse,
-    flex: 1,
+  },
+  qrBarSub: {
+    ...TYPOGRAPHY.caption,
+    color: 'rgba(255,255,255,0.72)',
+    marginTop: 1,
+  },
+  headerIconBtn: {
+    backgroundColor: COLORS.backgroundSubtle,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   // Home panel — content-height, over the map
   panel: {
@@ -397,8 +503,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: RADIUS.xxl,
     borderTopRightRadius: RADIUS.xxl,
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
-    gap: SPACING.md,
+    paddingTop: SPACING.lg,
+    gap: SPACING.md + 2,
     ...SHADOWS.sheet,
   },
   panelCompact: {
@@ -416,56 +522,14 @@ const styles = StyleSheet.create({
     width: PANEL_MAX_WIDTH,
     marginLeft: -PANEL_MAX_WIDTH / 2,
   },
-  handle: {
-    alignSelf: 'center',
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: COLORS.border,
-    marginBottom: SPACING.xs,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: SPACING.sm,
-  },
   eyebrow: {
     ...TYPOGRAPHY.label,
     color: COLORS.textMuted,
-  },
-  heroWord: {
-    ...TYPOGRAPHY.display,
-    marginTop: 2,
-  },
-  heroWordCompact: {
-    ...TYPOGRAPHY.h1,
-    marginTop: 2,
-  },
-  heroWordOnline: {
-    color: COLORS.success,
-  },
-  heroWordOffline: {
-    color: COLORS.textPrimary,
   },
   heroSubtitle: {
     ...TYPOGRAPHY.bodySmall,
     color: COLORS.textSecondary,
     marginTop: 2,
-  },
-  gpsChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginBottom: 4,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.successLight,
-  },
-  gpsChipText: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '600',
-    color: COLORS.success,
   },
   statusBanner: {
     flexDirection: 'row',
@@ -520,40 +584,70 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.dangerDark,
   },
-  todayRow: {
+  statusBlock: {
+    gap: 4,
+  },
+  statusTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.borderLight,
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
-  todayStat: {
-    flex: 1,
-    minHeight: 48,
-    justifyContent: 'center',
-  },
-  todayCaption: {
-    ...TYPOGRAPHY.label,
-    color: COLORS.textMuted,
-  },
-  todayValueRow: {
+  statusPill: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
+  },
+  statusPillOnline: { backgroundColor: COLORS.successLight },
+  statusPillOffline: { backgroundColor: COLORS.surfaceInput },
+  statusPillText: { ...TYPOGRAPHY.caption, fontWeight: '700' },
+  statusPillTextOnline: { color: COLORS.success },
+  statusPillTextOffline: { color: COLORS.textSecondary },
+  gpsMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  gpsMetaText: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
+  statusTitle: { ...TYPOGRAPHY.h1, color: COLORS.textPrimary },
+  statusTitleCompact: { ...TYPOGRAPHY.h2 },
+  liveDotWrap: { width: 8, height: 8, alignItems: 'center', justifyContent: 'center' },
+  liveRing: { position: 'absolute', width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.success },
+  heroDot: { width: 8, height: 8, borderRadius: 4 },
+  heroDotOnline: { backgroundColor: COLORS.success },
+  heroDotOffline: { backgroundColor: COLORS.textMuted },
+  statsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm + 4,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.backgroundSubtle,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+  },
+  stat: {
+    flex: 1,
     alignItems: 'center',
     gap: 4,
-    marginTop: 3,
+    paddingHorizontal: SPACING.xs,
   },
-  todayValue: {
-    ...TYPOGRAPHY.h1,
-    color: COLORS.textPrimary,
-    flexShrink: 1,
+  statValue: { ...TYPOGRAPHY.h2, color: COLORS.textPrimary },
+  statValueCompact: { ...TYPOGRAPHY.h3 },
+  statLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statLabel: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
+  statDivider: { width: 1, alignSelf: 'stretch', backgroundColor: COLORS.border },
+  todayBlock: {
+    gap: SPACING.sm,
   },
-  todayValueCompact: {
-    ...TYPOGRAPHY.h2,
+  avatarDot: {
+    position: 'absolute',
+    right: -1,
+    bottom: -1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: COLORS.background,
   },
-  todayDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: COLORS.borderLight,
-    marginHorizontal: SPACING.lg,
-  },
+  avatarDotOnline: { backgroundColor: COLORS.success },
+  avatarDotOffline: { backgroundColor: COLORS.textMuted },
 });

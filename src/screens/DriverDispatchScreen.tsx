@@ -139,6 +139,8 @@ export default function DriverDispatchScreen() {
         driverLocation={driverLocation}
         isOnline
         showCompass={false}
+        mapVariant="bright"
+        pitch={0}
         target={
           pickupLat != null && pickupLng != null
             ? { lat: pickupLat, lng: pickupLng, label: booking.pickup, kind: 'pickup' }

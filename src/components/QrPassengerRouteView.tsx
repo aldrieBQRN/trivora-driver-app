@@ -57,6 +57,8 @@ export default function QrPassengerRouteView({ passenger, label, onBack, onDropO
         driverLocation={driverLocation}
         isOnline
         showCompass
+        mapVariant="liberty"
+        pitch={50}
         target={{ lat: dest.lat, lng: dest.lng, label: dest.name, kind: 'dropoff' }}
         routeCoordinates={route?.coordinates ?? []}
         routeSource={route?.source ?? 'fallback'}

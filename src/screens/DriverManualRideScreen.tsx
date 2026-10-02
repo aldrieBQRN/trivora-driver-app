@@ -152,6 +152,8 @@ function ManualRideSetup() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         {/* Trip */}
         <Text style={styles.sectionLabelFirst}>Trip</Text>
+        {/* Pick-up + destination in one card, like the passenger app's route card */}
+        <View style={styles.tripCard}>
         <View style={styles.tripRow}>
           <View style={styles.markerCol}><View style={styles.pickupDot} /></View>
           <View style={styles.flex}>
@@ -167,7 +169,7 @@ function ManualRideSetup() {
         </View>
 
         <TouchableOpacity
-          style={styles.tripRow}
+          style={[styles.tripRow, styles.tripRowDivided]}
           onPress={() => setShowChooser(true)}
           activeOpacity={0.7}
           accessibilityRole="button"
@@ -182,6 +184,7 @@ function ManualRideSetup() {
           </View>
           {destination ? <Text style={styles.changeText}>Change</Text> : <ChevronRight size={18} color={COLORS.textMuted} />}
         </TouchableOpacity>
+        </View>
 
         <View style={styles.partyRow}>
           <View style={styles.flex}>
@@ -296,7 +299,11 @@ function ManualRideSetup() {
         <View style={styles.footerRow}>
           <View style={styles.flex}>
             <Text style={styles.caption}>Total fare</Text>
-            <Text style={styles.footerValue}>{quote ? peso(quote.fare_amount) : '—'}</Text>
+            {quote ? (
+              <Text style={styles.footerValue}>{peso(quote.fare_amount)}</Text>
+            ) : (
+              <Text style={styles.footerPending}>Set a destination</Text>
+            )}
           </View>
           <Button
             label="Add Passenger"
@@ -428,6 +435,8 @@ function ManualRideInProgress({ ride }: { ride: ManualRide }) {
         driverLocation={driverLocation}
         isOnline
         showCompass
+        mapVariant="liberty"
+        pitch={50}
         target={{ lat: dest.lat, lng: dest.lng, label: dest.name, kind: 'dropoff' }}
         routeCoordinates={route?.coordinates ?? []}
         routeSource={route?.source ?? 'fallback'}
@@ -536,10 +545,12 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { paddingHorizontal: SPACING.lg, paddingBottom: SPACING.lg },
 
-  // Setup — flat sections with hairline dividers
-  sectionLabelFirst: { ...TYPOGRAPHY.label, color: COLORS.textSecondary, paddingTop: SPACING.md + 4, paddingBottom: SPACING.xs },
-  sectionLabel: { ...TYPOGRAPHY.label, color: COLORS.textSecondary, marginTop: SPACING.md, paddingTop: SPACING.md + 4, paddingBottom: SPACING.xs, borderTopWidth: 1, borderTopColor: COLORS.border },
+  // Setup — bordered cards with soft section labels (same language as the passenger app)
+  sectionLabelFirst: { ...TYPOGRAPHY.label, color: COLORS.textMuted, paddingTop: SPACING.md + 4, paddingBottom: SPACING.sm },
+  sectionLabel: { ...TYPOGRAPHY.label, color: COLORS.textMuted, marginTop: SPACING.lg, paddingBottom: SPACING.sm },
+  tripCard: { borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.lg, paddingHorizontal: SPACING.md },
   tripRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60, paddingVertical: SPACING.sm },
+  tripRowDivided: { borderTopWidth: 1, borderTopColor: COLORS.borderLight },
   markerCol: { width: 20, alignItems: 'center' },
   pickupDot: { width: 11, height: 11, borderRadius: 6, borderWidth: 3, borderColor: COLORS.primary, backgroundColor: COLORS.background },
   caption: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
@@ -549,7 +560,11 @@ const styles = StyleSheet.create({
   gpsText: { ...TYPOGRAPHY.caption, fontWeight: '600' },
   gpsOk: { color: COLORS.success },
   gpsWait: { color: COLORS.textSecondary },
-  partyRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, borderTopWidth: 1, borderTopColor: COLORS.borderLight },
+  partyRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64,
+    marginTop: SPACING.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
+    borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.lg,
+  },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   stepBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
   stepBtnDisabled: { opacity: 0.35 },
@@ -571,6 +586,7 @@ const styles = StyleSheet.create({
   footerError: { textAlign: 'center' },
   footerRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, minHeight: 52 },
   footerValue: { ...TYPOGRAPHY.h1, color: COLORS.textPrimary },
+  footerPending: { ...TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.textMuted, marginTop: 2 },
   footerBtn: { minWidth: 160 },
 
   // In progress — map + bottom panel
