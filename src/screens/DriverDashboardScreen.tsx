@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useDriverShift } from '../context/DriverShiftContext';
-import { Star, Bell, Satellite, Gauge, ShieldAlert, ChevronRight, ShieldOff, Ban, Users, Plus, Navigation, MapPin, Wallet, CheckCircle2, Power, PowerOff } from 'lucide-react-native';
+import { Star, Bell, Satellite, Gauge, ShieldAlert, AlertOctagon, ChevronRight, ShieldOff, Ban, Users, Plus, Navigation, MapPin, Wallet, CheckCircle2, Power, PowerOff } from 'lucide-react-native';
 import { useQrSession } from '../context/QrSessionContext';
 import { useManualRide } from '../context/ManualRideContext';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
@@ -35,10 +35,10 @@ const PANEL_MAX_WIDTH = 560;
 const NARROW_WIDTH = 380;
 
 /** Status dot; while online a soft ring pulses out from it to read as "live". */
-function LiveDot({ online }: { online: boolean }) {
+function LiveDot({ online, noSignal }: { online: boolean; noSignal?: boolean }) {
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    if (!online) {
+    if (!online || noSignal) {
       pulse.stopAnimation();
       pulse.setValue(0);
       return;
@@ -48,11 +48,11 @@ function LiveDot({ online }: { online: boolean }) {
     );
     loop.start();
     return () => loop.stop();
-  }, [online, pulse]);
+  }, [online, noSignal, pulse]);
 
   return (
     <View style={styles.liveDotWrap}>
-      {online && (
+      {online && !noSignal && (
         <Animated.View
           style={[
             styles.liveRing,
@@ -63,7 +63,16 @@ function LiveDot({ online }: { online: boolean }) {
           ]}
         />
       )}
-      <View style={[styles.heroDot, online ? styles.heroDotOnline : styles.heroDotOffline]} />
+      <View
+        style={[
+          styles.heroDot,
+          !online
+            ? styles.heroDotOffline
+            : noSignal
+            ? styles.heroDotNoSignal
+            : styles.heroDotOnline,
+        ]}
+      />
     </View>
   );
 }
@@ -94,6 +103,7 @@ export default function DriverDashboardScreen({
     activeSpeedWarning,
     codingWarning,
     violations,
+    telemetryStatus,
   } = useDriverShift();
   const insets = useSafeAreaInsets();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -312,10 +322,28 @@ export default function DriverDashboardScreen({
             sits quietly beside the pill. */}
         <View style={styles.statusBlock}>
           <View style={styles.statusTopRow}>
-            <View style={[styles.statusPill, isOnline ? styles.statusPillOnline : styles.statusPillOffline]}>
-              <LiveDot online={isOnline} />
-              <Text style={[styles.statusPillText, isOnline ? styles.statusPillTextOnline : styles.statusPillTextOffline]}>
-                {isOnline ? 'Online' : 'Offline'}
+            <View
+              style={[
+                styles.statusPill,
+                !isOnline
+                  ? styles.statusPillOffline
+                  : telemetryStatus === 'no_signal'
+                  ? styles.statusPillNoSignal
+                  : styles.statusPillOnline,
+              ]}
+            >
+              <LiveDot online={isOnline} noSignal={isOnline && telemetryStatus === 'no_signal'} />
+              <Text
+                style={[
+                  styles.statusPillText,
+                  !isOnline
+                    ? styles.statusPillTextOffline
+                    : telemetryStatus === 'no_signal'
+                    ? styles.statusPillTextNoSignal
+                    : styles.statusPillTextOnline,
+                ]}
+              >
+                {!isOnline ? 'Offline' : telemetryStatus === 'no_signal' ? 'No Signal' : 'Online'}
               </Text>
             </View>
             {isOnline ? (
@@ -326,14 +354,20 @@ export default function DriverDashboardScreen({
             ) : null}
           </View>
           <Text style={[styles.statusTitle, isCompact && styles.statusTitleCompact]}>
-            {isOnline ? 'Ready for ride requests' : "You're offline"}
+            {!isOnline
+              ? "You're offline"
+              : telemetryStatus === 'no_signal'
+              ? 'GPS Signal Lost'
+              : 'Ready for ride requests'}
           </Text>
           <Text style={styles.heroSubtitle}>
             {isRestricted
               ? 'Going online is disabled while your franchise is restricted'
-              : isOnline
-              ? "You're visible to nearby passengers"
-              : 'Go online to start receiving rides'}
+              : !isOnline
+              ? 'Go online to start receiving rides'
+              : telemetryStatus === 'no_signal'
+              ? 'Searching for satellite signal or connection'
+              : "You're visible to nearby passengers"}
           </Text>
         </View>
 
@@ -371,12 +405,49 @@ export default function DriverDashboardScreen({
         )}
 
         {hasComplianceWarning && (
-          <TouchableOpacity style={styles.warningRow} onPress={onOpenViolations} activeOpacity={0.75}>
-            {activeSpeedWarning ? <Gauge size={15} color={COLORS.dangerDark} /> : <ShieldAlert size={15} color={COLORS.dangerDark} />}
-            <Text style={styles.warningText} numberOfLines={2}>
-              {activeSpeedWarning ? 'Overspeeding detected — slow down to stay under the municipal limit.' : codingWarning?.description}
-            </Text>
-            <ChevronRight size={14} color={COLORS.dangerDark} />
+          <TouchableOpacity
+            style={[
+              styles.warningRow,
+              codingWarning && !codingWarning.isViolation && !activeSpeedWarning
+                ? styles.warningRowAdvisory
+                : styles.warningRowDanger,
+            ]}
+            onPress={activeSpeedWarning || codingWarning?.isViolation ? onOpenViolations : undefined}
+            activeOpacity={activeSpeedWarning || codingWarning?.isViolation ? 0.75 : 1}
+            disabled={!activeSpeedWarning && !codingWarning?.isViolation}
+          >
+            {activeSpeedWarning ? (
+              <Gauge size={18} color={COLORS.dangerDark} />
+            ) : codingWarning?.isViolation ? (
+              <AlertOctagon size={18} color={COLORS.dangerDark} />
+            ) : (
+              <ShieldAlert size={18} color={COLORS.amberDark} />
+            )}
+
+            <View style={styles.warningContent}>
+              {activeSpeedWarning ? (
+                <>
+                  <Text style={styles.warningTitleDanger}>Speed Limit Exceeded</Text>
+                  <Text style={styles.warningAdvisoryText}>
+                    Overspeeding detected — slow down to stay under the municipal limit.
+                  </Text>
+                </>
+              ) : codingWarning ? (
+                <Text
+                  style={
+                    codingWarning.isViolation
+                      ? styles.warningTitleDanger
+                      : styles.warningTitleAdvisory
+                  }
+                >
+                  {codingWarning.title}
+                </Text>
+              ) : null}
+            </View>
+
+            {(activeSpeedWarning || codingWarning?.isViolation) && (
+              <ChevronRight size={14} color={COLORS.dangerDark} />
+            )}
           </TouchableOpacity>
         )}
 
@@ -573,10 +644,53 @@ const styles = StyleSheet.create({
   warningRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: COLORS.dangerLight,
+    gap: 10,
     borderRadius: RADIUS.lg,
-    padding: SPACING.sm + 2,
+    paddingVertical: SPACING.sm + 3,
+    paddingHorizontal: SPACING.md,
+  },
+  warningRowAdvisory: {
+    backgroundColor: COLORS.amberLight,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  warningRowDanger: {
+    backgroundColor: COLORS.dangerLight,
+    borderWidth: 1,
+    borderColor: COLORS.dangerBorder,
+  },
+  warningContent: {
+    flex: 1,
+    gap: 2,
+  },
+  warningTitleAdvisory: {
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '700',
+    color: COLORS.amberDark,
+  },
+  warningTitleDanger: {
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '700',
+    color: COLORS.dangerDark,
+  },
+  warningRuleInfo: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  warningRuleInfoDanger: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '600',
+    color: COLORS.dangerDark,
+  },
+  warningAdvisoryText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+  },
+  warningFineText: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700',
+    color: COLORS.dangerDark,
   },
   warningText: {
     flex: 1,
@@ -603,9 +717,11 @@ const styles = StyleSheet.create({
   },
   statusPillOnline: { backgroundColor: COLORS.successLight },
   statusPillOffline: { backgroundColor: COLORS.surfaceInput },
+  statusPillNoSignal: { backgroundColor: COLORS.amberLight, borderWidth: 1, borderColor: '#FDE68A' },
   statusPillText: { ...TYPOGRAPHY.caption, fontWeight: '700' },
   statusPillTextOnline: { color: COLORS.success },
   statusPillTextOffline: { color: COLORS.textSecondary },
+  statusPillTextNoSignal: { color: COLORS.amberDark },
   gpsMeta: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   gpsMetaText: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
   statusTitle: { ...TYPOGRAPHY.h1, color: COLORS.textPrimary },
@@ -615,6 +731,7 @@ const styles = StyleSheet.create({
   heroDot: { width: 8, height: 8, borderRadius: 4 },
   heroDotOnline: { backgroundColor: COLORS.success },
   heroDotOffline: { backgroundColor: COLORS.textMuted },
+  heroDotNoSignal: { backgroundColor: COLORS.amber },
   statsGroup: {
     flexDirection: 'row',
     alignItems: 'center',

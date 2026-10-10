@@ -15,6 +15,21 @@ export interface TodaZone {
   perKmRate: number;
 }
 
+export interface CodingStatus {
+  is_restricted_today: boolean;
+  evaluated_identifier?: string | null;
+  last_digit?: number | null;
+  scheme_id?: number | null;
+  scheme_name?: string | null;
+  color_hex?: string | null;
+  restricted_days?: string[];
+  restricted_digits?: number[];
+  fine_amount?: number;
+  status: string;
+  status_label: string;
+  warning_message?: string | null;
+}
+
 export interface TricycleUnit {
   id: number;
   plateNumber: string;
@@ -25,6 +40,7 @@ export interface TricycleUnit {
   unitCode?: string;
   stickerNumber?: string | null;
   passengerCapacity?: number | null;
+  codingStatus?: CodingStatus | null;
 }
 
 export interface NearbyPlace {
@@ -62,6 +78,7 @@ export interface DriverProfile {
   totalTrips: number;
   todayEarnings: number;
   avatarUrl?: string | null;
+  codingStatus?: CodingStatus | null;
   /** TMO-controlled operational authorization status of this driver's ASSIGNED FRANCHISE
    * (FranchiseScheme.status on the backend) — NOT a status on the driver's own account. A
    * driver's personal account/login is never suspended or revoked; only their franchise's
@@ -105,6 +122,7 @@ export interface ViolationCitation {
   description: string;
   fine: number;
   date: string;
+  detectedAt?: string | null;
   /** Simple binary state — kept for the existing All/Pending/Resolved filter tabs and badge tone. */
   status: 'pending' | 'resolved';
   /** The real lifecycle state, including appeal sub-states — see DriverViolationController's
@@ -114,6 +132,19 @@ export interface ViolationCitation {
   canAppeal: boolean;
   location: { latitude: number; longitude: number } | null;
   appeal: ViolationAppeal | null;
+}
+
+export interface CodingWarning {
+  isViolation: boolean;
+  title: string;
+  day: string;
+  lastDigit?: number | null;
+  ruleInfo: string;
+  advisory: string;
+  fineAmount?: number | null;
+  fineText?: string | null;
+  description: string;
+  colorHex?: string | null;
 }
 
 export interface IncomingBooking {

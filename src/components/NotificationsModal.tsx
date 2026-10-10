@@ -72,15 +72,31 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
 
                 {codingWarning && (
                   <View style={styles.row}>
-                    <View style={[styles.iconBubble, styles.iconBubbleDanger]}>
-                      <ShieldAlert size={17} color={COLORS.dangerDark} />
+                    <View
+                      style={[
+                        styles.iconBubble,
+                        codingWarning.isViolation ? styles.iconBubbleDanger : styles.iconBubbleWarning,
+                      ]}
+                    >
+                      {codingWarning.isViolation ? (
+                        <AlertOctagon size={17} color={COLORS.dangerDark} />
+                      ) : (
+                        <ShieldAlert size={17} color={COLORS.amberDark} />
+                      )}
                     </View>
                     <View style={styles.rowBody}>
                       <View style={styles.rowHeader}>
-                        <Text style={styles.rowTitle}>Color-Coding Restriction</Text>
-                        <StatusBadge label="LIVE" tone="danger" size="sm" />
+                        <Text style={styles.rowTitle}>{codingWarning.title || 'Coding Restriction Today'}</Text>
+                        <StatusBadge
+                          label={codingWarning.isViolation ? 'VIOLATION' : 'RESTRICTED'}
+                          tone={codingWarning.isViolation ? 'danger' : 'warning'}
+                          size="sm"
+                        />
                       </View>
                       <Text style={styles.rowDesc}>{codingWarning.description}</Text>
+                      {codingWarning.fineText ? (
+                        <Text style={[styles.rowFine, { marginTop: 2 }]}>{codingWarning.fineText}</Text>
+                      ) : null}
                     </View>
                   </View>
                 )}

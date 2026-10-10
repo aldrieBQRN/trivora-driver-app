@@ -17,6 +17,7 @@ import { X, QrCode, Upload, Trash2, CheckCircle2, AlertCircle } from 'lucide-rea
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import Button from './Button';
 import ConfirmModal from './ConfirmModal';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useToast } from './Toast';
 import { driverApi } from '../services/api';
 import { DriverGcashQrStatus } from '../types';
@@ -25,41 +26,126 @@ interface DriverGcashSettingsModalProps {
   visible: boolean;
   onClose: () => void;
   onUpdated?: (status: DriverGcashQrStatus) => void;
+  initialStatus?: DriverGcashQrStatus | null;
+  driverId?: number;
+}
+
+// In-memory module cache for GCash status
+let cachedGcashState: { driverId: number; data: DriverGcashQrStatus } | null = null;
+
+export function getCachedGcashStatus(driverId?: number): DriverGcashQrStatus | null {
+  if (!driverId) return null;
+  return cachedGcashState && cachedGcashState.driverId === driverId ? cachedGcashState.data : null;
+}
+
+export function saveCachedGcashStatus(driverId: number, status: DriverGcashQrStatus): void {
+  cachedGcashState = { driverId, data: status };
+  AsyncStorage.setItem(`@trivora_driver_gcash_status_${driverId}`, JSON.stringify(status)).catch(() => {});
+}
+
+export function clearDriverGcashCache(): void {
+  cachedGcashState = null;
+}
+
+export async function prefetchDriverGcashQr(driverId?: number): Promise<DriverGcashQrStatus | null> {
+  if (!driverId) return null;
+
+  // Return in-memory cache immediately if fresh
+  if (cachedGcashState && cachedGcashState.driverId === driverId) {
+    // Silent background sync
+    driverApi
+      .getGcashQr()
+      .then((res) => {
+        if (res) saveCachedGcashStatus(driverId, res);
+      })
+      .catch(() => {});
+    return cachedGcashState.data;
+  }
+
+  // Check persistent AsyncStorage cache
+  try {
+    const raw = await AsyncStorage.getItem(`@trivora_driver_gcash_status_${driverId}`);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as DriverGcashQrStatus;
+        if (parsed) {
+          cachedGcashState = { driverId, data: parsed };
+          // Revalidate in background
+          driverApi
+            .getGcashQr()
+            .then((res) => {
+              if (res) saveCachedGcashStatus(driverId, res);
+            })
+            .catch(() => {});
+          return parsed;
+        }
+      } catch {}
+    }
+  } catch {}
+
+  // Fallback to direct network fetch
+  try {
+    const res = await driverApi.getGcashQr();
+    if (res) {
+      saveCachedGcashStatus(driverId, res);
+      return res;
+    }
+  } catch {}
+
+  return null;
 }
 
 export default function DriverGcashSettingsModal({
   visible,
   onClose,
   onUpdated,
+  initialStatus,
+  driverId,
 }: DriverGcashSettingsModalProps) {
   const { showToast } = useToast();
+  const cachedInitial = initialStatus || (driverId ? getCachedGcashStatus(driverId) : null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [qrStatus, setQrStatus] = useState<DriverGcashQrStatus | null>(null);
+  const [qrStatus, setQrStatus] = useState<DriverGcashQrStatus | null>(cachedInitial);
   const [pickedImage, setPickedImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
-  const [gcashName, setGcashName] = useState('');
-  const [gcashNumber, setGcashNumber] = useState('');
+  const [gcashName, setGcashName] = useState(cachedInitial?.gcash_name || '');
+  const [gcashNumber, setGcashNumber] = useState(cachedInitial?.gcash_number || '');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const fetchStatus = async () => {
-    setLoading(true);
+  const fetchStatus = async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
     try {
       const res = await driverApi.getGcashQr();
       setQrStatus(res);
       setGcashName(res.gcash_name || '');
       setGcashNumber(res.gcash_number || '');
       setPickedImage(null);
+      if (driverId) {
+        saveCachedGcashStatus(driverId, res);
+      }
       if (onUpdated) onUpdated(res);
     } catch {
-      showToast('Could not load GCash settings.', 'info');
+      if (!qrStatus && !cachedInitial) {
+        showToast('Could not load GCash settings.', 'info');
+      }
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   };
 
   useEffect(() => {
     if (visible) {
-      fetchStatus();
+      const cached = initialStatus || (driverId ? getCachedGcashStatus(driverId) : null);
+      if (cached) {
+        setQrStatus(cached);
+        setGcashName(cached.gcash_name || '');
+        setGcashNumber(cached.gcash_number || '');
+        setPickedImage(null);
+        setLoading(false);
+        fetchStatus(true); // silent background revalidation
+      } else {
+        fetchStatus(false);
+      }
     }
   }, [visible]);
 
@@ -107,6 +193,9 @@ export default function DriverGcashSettingsModal({
       const updatedStatus: DriverGcashQrStatus = (res as any)?.driver || res;
       setQrStatus(updatedStatus);
       setPickedImage(null);
+      if (driverId) {
+        saveCachedGcashStatus(driverId, updatedStatus);
+      }
       if (onUpdated) onUpdated(updatedStatus);
       onClose();
     } catch (err: any) {
@@ -133,6 +222,9 @@ export default function DriverGcashSettingsModal({
       setGcashName('');
       setGcashNumber('');
       setPickedImage(null);
+      if (driverId) {
+        saveCachedGcashStatus(driverId, updated);
+      }
       if (onUpdated) onUpdated(updated);
       onClose();
     } catch (err: any) {
@@ -181,6 +273,8 @@ export default function DriverGcashSettingsModal({
                         size="md"
                         icon={Upload}
                         onPress={handlePickImage}
+                        fullWidth={false}
+                        style={styles.qrActionBtn}
                       />
                       {hasQr && (
                         <Button
@@ -189,6 +283,8 @@ export default function DriverGcashSettingsModal({
                           size="md"
                           icon={Trash2}
                           onPress={() => setShowDeleteConfirm(true)}
+                          fullWidth={false}
+                          style={styles.qrActionBtn}
                         />
                       )}
                     </View>
@@ -347,7 +443,13 @@ const styles = StyleSheet.create({
   },
   qrActionsRow: {
     flexDirection: 'row',
+    width: '100%',
     gap: SPACING.sm,
+    justifyContent: 'center',
+  },
+  qrActionBtn: {
+    flex: 1,
+    paddingHorizontal: SPACING.xs,
   },
   uploadPlaceholder: {
     width: '100%',

@@ -71,6 +71,9 @@ export function DriverAuthProvider({ children }: { children: ReactNode }) {
     tokenRef.current = null;
     setAuthToken(null);
     AsyncStorage.removeItem(SESSION_STORAGE_KEY).catch(() => {});
+    AsyncStorage.setItem('@trivora_is_online', 'false').catch(() => {});
+    AsyncStorage.removeItem('@trivora_bg_last_sent_at').catch(() => {});
+    AsyncStorage.removeItem('@trivora_gps_transmitter').catch(() => {});
 
     if (prevToken) {
       driverApi
