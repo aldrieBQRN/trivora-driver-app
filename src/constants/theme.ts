@@ -1,14 +1,14 @@
 /**
  * Trivora Driver Design System - Modern Native App Theme
- * Primary Brand: #1D2542 | Dominant Clean White: #FFFFFF
+ * Primary Brand: #182B62 | Dominant Clean White: #FFFFFF
  * Optimized for handlebar mount clarity, outdoor sunlight readability, and tactile operation
  */
 
 export const COLORS = {
-  // Shared Trivora brand navy (#1D2542) — same in the Passenger and Driver apps
-  primary: '#1D2542',
+  // Shared Trivora brand navy (#182B62) — same in the Passenger and Driver apps
+  primary: '#182B62',
   primaryDark: '#141A31',
-  primaryHover: '#283256',
+  primaryHover: '#25449B',
   primaryLight: '#4A5275',
   primaryTint: '#EDEEF3',
 
@@ -22,7 +22,7 @@ export const COLORS = {
   // Hairline Borders
   border: '#E2E8F0',
   borderLight: '#F1F5F9',
-  borderFocus: '#1D2542',
+  borderFocus: '#182B62',
 
   // Typography
   textPrimary: '#0F172A',
@@ -55,7 +55,7 @@ export const COLORS = {
 
   // Dark hero surfaces (splash, incoming-booking backdrop, profile banner)
   darkBackground: '#141A31',
-  darkSurface: '#1D2542',
+  darkSurface: '#182B62',
   darkSurfaceRaised: '#2A3358',
   darkBorder: 'rgba(255, 255, 255, 0.16)',
   darkTextPrimary: '#FFFFFF',

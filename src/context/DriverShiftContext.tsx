@@ -600,7 +600,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         foregroundService: {
           notificationTitle: 'Trivora Driver',
           notificationBody: 'Sending GPS for your active shift',
-          notificationColor: '#1D2542',
+          notificationColor: '#182B62',
         },
       });
       return true;

@@ -121,7 +121,7 @@ export async function downloadQrPdf(
     // Header Branding
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
-    doc.setTextColor(29, 37, 66); // #1D2542
+    doc.setTextColor(24, 43, 98); // #182B62
     doc.text('TRIVORA', centerX, 16, { align: 'center' });
 
     doc.setFontSize(18);
