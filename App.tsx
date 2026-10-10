@@ -34,6 +34,7 @@ import RideHistoryScreen from './src/screens/RideHistoryScreen';
 import DriverProfileScreen from './src/screens/DriverProfileScreen';
 import TelematicsSettingsScreen from './src/screens/TelematicsSettingsScreen';
 import DriverQrCodeScreen from './src/screens/DriverQrCodeScreen';
+import DriverGcashQrScreen from './src/screens/DriverGcashQrScreen';
 import DriverQrSessionScreen from './src/screens/DriverQrSessionScreen';
 import DriverManualRideScreen from './src/screens/DriverManualRideScreen';
 
@@ -51,7 +52,7 @@ const PRIMARY_TABS: CurvedTab<PrimaryTab>[] = [
   { key: 'earnings', label: 'Earnings', icon: Wallet },
   { key: 'profile', label: 'Profile', icon: User },
 ];
-type PushedScreen = 'tracking_settings' | 'qr_code' | null;
+type PushedScreen = 'tracking_settings' | 'qr_code' | 'gcash_settings' | null;
 
 function DriverAppNavigator() {
   const { isAuthenticated, isRestoring } = useDriverAuth();
@@ -252,6 +253,10 @@ function DriverAppNavigator() {
       return <DriverQrCodeScreen onBack={() => setPushedScreen(null)} />;
     }
 
+    if (pushedScreen === 'gcash_settings') {
+      return <DriverGcashQrScreen onBack={() => setPushedScreen(null)} />;
+    }
+
     if (activeTab === 'trips') {
       return <RideHistoryScreen />;
     }
@@ -269,6 +274,7 @@ function DriverAppNavigator() {
         <DriverProfileScreen
           onOpenTrackingSettings={() => setPushedScreen('tracking_settings')}
           onOpenQrCode={() => setPushedScreen('qr_code')}
+          onOpenGcashSettings={() => setPushedScreen('gcash_settings')}
         />
       );
     }

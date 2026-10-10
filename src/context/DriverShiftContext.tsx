@@ -20,8 +20,8 @@ import {
   mapBookingRecordToHistoryItem,
   mapViolationRecordToCitation,
 } from '../services/api';
-import { MUNICIPAL_SPEED_LIMIT_KMH, checkColorCodingViolation } from '../constants/todaRoutes';
-import { ViolationCitation, IncomingBooking, RideHistoryItem } from '../types';
+import { MUNICIPAL_SPEED_LIMIT_KMH } from '../constants/todaRoutes';
+import { ViolationCitation, IncomingBooking, RideHistoryItem, CodingWarning } from '../types';
 import {
   LOCATION_TASK_NAME,
   LOCATION_EVENT_NAME,
@@ -73,6 +73,8 @@ interface PendingPing {
 interface DriverShiftContextType {
   isOnline: boolean;
   setIsOnline: (online: boolean) => void;
+  telemetryStatus: 'online' | 'no_signal' | 'offline';
+  autoOfflineRemainingSeconds: number | null;
   isAvailable: boolean;
   setIsAvailable: (avail: boolean) => void;
   trackingMode: 'mobile_app' | 'iot_device';
@@ -102,7 +104,7 @@ interface DriverShiftContextType {
     proof?: { uri: string; name: string; type: string }
   ) => Promise<void>;
   activeSpeedWarning: boolean;
-  codingWarning: any;
+  codingWarning: CodingWarning | null;
   incomingBooking: IncomingBooking | null;
   setIncomingBooking: (booking: IncomingBooking | null) => void;
   activeBooking: IncomingBooking | null;
@@ -135,26 +137,28 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   const { driver } = useDriverAuth();
   const { showToast } = useToast();
 
-  const [isOnline, setIsOnlineState] = useState<boolean>(true);
-  const [isAvailable, setIsAvailableState] = useState<boolean>(true);
+  // Requirements 1 & 9: Every new login/session starts Offline until the driver manually taps Online.
+  const [isOnline, setIsOnlineState] = useState<boolean>(false);
+  const [isAvailable, setIsAvailableState] = useState<boolean>(false);
 
-  // Guards the persistence effect below from overwriting the real historical value with this
-  // hook's hardcoded `true` default before the restore-and-reconcile effect has had a chance to
-  // read it back — both effects fire on the same initial render, so ordering matters here.
+  // Authoritative telemetry connection state & countdown tracker
+  const [telemetryStatus, setTelemetryStatus] = useState<'online' | 'no_signal' | 'offline'>('offline');
+  const [autoOfflineRemainingSeconds, setAutoOfflineRemainingSeconds] = useState<number | null>(null);
+  const lastSuccessfulTelemetryAtRef = useRef<number | null>(null);
+  const wasNoSignalRef = useRef<boolean>(false);
+  const autoOfflineTimeoutReachedRef = useRef<boolean>(false);
+
+  // Guards the persistence effect below from overwriting before initialization
   const hasRestoredOnlineRef = useRef(false);
 
-  // Mirrored to AsyncStorage so a relaunch (see the restore-and-reconcile effect a few lines
-  // down) knows whether the driver was actually online when the app last ran, and so the
-  // background task (locationTask.ts) can independently notice it's been orphaned — see there.
+  // Mirrored to AsyncStorage so background tasks know the authoritative offline state
   useEffect(() => {
     if (!hasRestoredOnlineRef.current) return;
     AsyncStorage.setItem(IS_ONLINE_STORAGE_KEY, String(isOnline)).catch(() => {});
   }, [isOnline]);
 
-  // Logout is an explicit Offline: the backend sets drivers.is_online = false as part of logout,
-  // so the local shift state follows it — the next login starts Offline instead of showing
-  // "Online" while the server says Offline. Only on a real logged-in -> logged-out transition,
-  // never on the initial pre-restore render (driver is null then too).
+  // Logout is an explicit Offline: the backend sets drivers.is_online = false,
+  // and local shift state resets to Offline.
   const hadDriverRef = useRef(false);
   useEffect(() => {
     if (driver) {
@@ -165,59 +169,35 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     hadDriverRef.current = false;
     setIsOnlineState(false);
     setIsAvailableState(false);
+    setTelemetryStatus('offline');
+    setAutoOfflineRemainingSeconds(null);
+    lastSuccessfulTelemetryAtRef.current = null;
+    wasNoSignalRef.current = false;
+    autoOfflineTimeoutReachedRef.current = false;
+    stopBackgroundUpdates();
   }, [driver]);
 
-  // Startup/relaunch safety check. Ending a shift normally (tapping "Go Offline") already stops
-  // background tracking cleanly via the watcher effect's own cleanup below — this effect exists
-  // for the case that cleanup never ran at all: the driver force-quit the app while still online.
-  // startLocationUpdatesAsync registers a persistent OS-level task that survives the app process
-  // dying, so on the next launch it could still be running even though nothing in this fresh React
-  // tree ever started it. Runs once, before login, since the orphaned task belongs to whatever
-  // driver was using this device last, not necessarily whoever (re)opens the app next.
+  // Startup safety check: App always starts Offline. If a previous killed session left
+  // an OS-level background task running, reconcile and stop it here.
   useEffect(() => {
     (async () => {
-      let restoredOnline = true;
-      try {
-        const persisted = await AsyncStorage.getItem(IS_ONLINE_STORAGE_KEY);
-        if (persisted !== null) {
-          restoredOnline = persisted === 'true';
-          setIsOnlineState(restoredOnline);
-        }
-      } catch {
-        // Storage read failed — keep the safe `true` default; reconciliation below then simply
-        // finds nothing to stop (isTracking && !true is always false), which is the correct
-        // no-op when we can't determine the real prior state.
-      } finally {
-        hasRestoredOnlineRef.current = true;
-      }
-      // A fresh install with no persisted key yet (`persisted === null` above) falls through here
-      // with the same safe `true` default, for the same reason — nothing could have been orphaned
-      // before this app has ever gone online once.
+      setIsOnlineState(false);
+      setIsAvailableState(false);
+      setTelemetryStatus('offline');
+      setAutoOfflineRemainingSeconds(null);
+      hasRestoredOnlineRef.current = true;
+      await AsyncStorage.setItem(IS_ONLINE_STORAGE_KEY, 'false').catch(() => {});
 
-      // Background-delivery reconciliation for this relaunch, run before the watcher effect below
-      // can (re)start anything. startLocationUpdatesAsync() registers a persistent OS-level task,
-      // so a state where those updates are still running but this launch has no shift to track
-      // must be closed out here: driver offline, or no driver session left to authenticate a send
-      // with. When it is legitimately still online with a session, nothing is touched — the
-      // watcher effect is the single starter, and its startBackgroundUpdates() is idempotent
-      // (it checks hasStartedLocationUpdatesAsync first), so a relaunch just re-enters the state
-      // it was already in instead of starting a second sender.
       if (Platform.OS === 'web') return;
       try {
         const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
-        if (!started) return;
-        const sessionRaw = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
-        if (restoredOnline && sessionRaw) return;
-        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+        if (started) {
+          await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+        }
       } catch {
-        // Updates never started, background permission not granted yet, or the native module is
-        // unavailable in this environment — every one of those means "nothing to reconcile".
+        // Native module unavailable or permissions denied
       }
     })();
-    // Runs once per app process start — deliberately not re-run on driver/login changes, since an
-    // orphaned task is a device-level leftover, not something tied to whichever driver is
-    // currently authenticated.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const [trackingMode, setTrackingMode] = useState<'mobile_app' | 'iot_device'>(
@@ -258,7 +238,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   const [violationsError, setViolationsError] = useState<string | null>(null);
 
   const [activeSpeedWarning, setActiveSpeedWarning] = useState<boolean>(false);
-  const [codingWarning, setCodingWarning] = useState<any>(null);
+  const [codingWarning, setCodingWarning] = useState<CodingWarning | null>(null);
 
   const [incomingBooking, setIncomingBooking] = useState<IncomingBooking | null>(null);
   const [activeBooking, setActiveBooking] = useState<IncomingBooking | null>(null);
@@ -317,15 +297,86 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   }, [completedHistory]);
 
   useEffect(() => {
-    if (driver?.tricycle?.plateNumber) {
-      const check = checkColorCodingViolation(driver.tricycle.plateNumber);
-      if (check.isViolation) {
-        setCodingWarning(check);
-      } else {
-        setCodingWarning(null);
-      }
+    const cs = driver?.codingStatus || driver?.tricycle?.codingStatus;
+    if (!cs || !cs.is_restricted_today) {
+      setCodingWarning(null);
+      return;
     }
-  }, [driver]);
+
+    // Wait until violations have loaded before computing the warning to prevent flicker
+    if (isLoadingViolations) {
+      return;
+    }
+
+    const dayName = cs.restricted_days?.[0] || 'Today';
+    const digitText =
+      cs.last_digit != null
+        ? `Ending digit ${cs.last_digit}`
+        : cs.restricted_digits?.length
+        ? `Ending digits ${cs.restricted_digits.join(', ')}`
+        : '';
+    const ruleInfo = digitText ? `${dayName} • ${digitText}` : dayName;
+
+    // Check if an actual confirmed coding violation record exists in the database for today
+    const isRecordedToday = (isoDate?: string | null) => {
+      if (!isoDate) return false;
+      const d = new Date(isoDate);
+      if (isNaN(d.getTime())) return false;
+      const now = new Date();
+      return (
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate()
+      );
+    };
+
+    const isCodingViolation = (v: ViolationCitation) => {
+      const type = (v.type || '').toLowerCase();
+      const title = (v.title || '').toLowerCase();
+      return (
+        type === 'color_coding' ||
+        type.includes('coding') ||
+        title.includes('coding') ||
+        title.includes('color coding')
+      );
+    };
+
+    const confirmedViolation = violations.find(
+      (v) => isCodingViolation(v) && isRecordedToday(v.detectedAt) && v.status !== 'resolved'
+    );
+
+    const isViolation = !!confirmedViolation;
+    const fineAmount = confirmedViolation?.fine ?? cs.fine_amount ?? 500;
+    const fineText = `Municipal Fine: ₱${Number(fineAmount).toFixed(2)}`;
+
+    if (isViolation) {
+      setCodingWarning({
+        isViolation: true,
+        title: 'Coding Restriction Violation',
+        day: dayName,
+        lastDigit: cs.last_digit,
+        ruleInfo,
+        advisory: 'Violation recorded for operating on a restricted coding day.',
+        fineAmount,
+        fineText,
+        description: `${ruleInfo} — ${fineText}`,
+        colorHex: cs.color_hex || '#EF4444',
+      });
+    } else {
+      setCodingWarning({
+        isViolation: false,
+        title: 'Coding Restriction Today',
+        day: dayName,
+        lastDigit: cs.last_digit,
+        ruleInfo,
+        advisory: 'This vehicle is restricted from operation today.',
+        fineAmount: null,
+        fineText: null,
+        description: `${ruleInfo} — This vehicle is restricted from operation today.`,
+        colorHex: cs.color_hex || '#F59E0B',
+      });
+    }
+  }, [driver, violations, isLoadingViolations]);
 
   const applyLocationFix = (coords: { lat: number; lng: number } | null) => {
     if (__DEV__) console.log('[driver-loc] initial fix from useCurrentLocation:', coords);
@@ -362,16 +413,74 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         await driverApi.sendTelematics(ping);
       }
       pendingPingRef.current = null;
+
+      lastSuccessfulTelemetryAtRef.current = Date.now();
+      if (wasNoSignalRef.current) {
+        wasNoSignalRef.current = false;
+        showToast('Internet connection restored. GPS tracking resumed.', 'success');
+      }
+      setTelemetryStatus('online');
+      setAutoOfflineRemainingSeconds(null);
     } catch (err) {
-      // Kept resilient (the reading is queued, never dropped) but no longer silent — a failed
-      // send here previously left zero trace anywhere, which is exactly what made "GPS looks like
-      // it's running but nothing reaches the database" invisible to debug. No token/PII logged.
       if (__DEV__) {
         console.warn('[telemetry] sendPing failed, queued for retry:', (err as Error)?.message || err);
       }
       pendingPingRef.current = ping;
     }
   };
+
+  // Authoritative telemetry cadence & auto-offline timer (Requirements 3, 4, 8)
+  useEffect(() => {
+    if (!isOnline) {
+      setTelemetryStatus('offline');
+      setAutoOfflineRemainingSeconds(null);
+      wasNoSignalRef.current = false;
+      return;
+    }
+
+    const checkCadence = async () => {
+      // Absorb background task's send timestamp if more recent
+      try {
+        const bgSent = Number((await AsyncStorage.getItem(LAST_SENT_AT_STORAGE_KEY)) || 0);
+        if (Number.isFinite(bgSent) && bgSent > (lastSuccessfulTelemetryAtRef.current || 0)) {
+          lastSuccessfulTelemetryAtRef.current = bgSent;
+        }
+      } catch {}
+
+      const lastSuccess = lastSuccessfulTelemetryAtRef.current;
+      if (!lastSuccess) return;
+
+      const elapsedSeconds = Math.floor((Date.now() - lastSuccess) / 1000);
+
+      if (elapsedSeconds <= 60) {
+        if (wasNoSignalRef.current) {
+          wasNoSignalRef.current = false;
+          showToast('Internet connection restored. GPS tracking resumed.', 'success');
+        }
+        setTelemetryStatus('online');
+        setAutoOfflineRemainingSeconds(null);
+      } else if (elapsedSeconds < 600) {
+        wasNoSignalRef.current = true;
+        setTelemetryStatus('no_signal');
+        setAutoOfflineRemainingSeconds(600 - elapsedSeconds);
+      } else {
+        // 10 minutes exceeded
+        if (!autoOfflineTimeoutReachedRef.current) {
+          autoOfflineTimeoutReachedRef.current = true;
+          setTelemetryStatus('offline');
+          setAutoOfflineRemainingSeconds(0);
+          setIsOnlineState(false);
+          setIsAvailableState(false);
+          AsyncStorage.setItem(IS_ONLINE_STORAGE_KEY, 'false').catch(() => {});
+          showToast('You have been offline for 10 minutes. You are now Offline.', 'info');
+        }
+      }
+    };
+
+    checkCadence();
+    const interval = setInterval(checkCadence, 1000);
+    return () => clearInterval(interval);
+  }, [isOnline]);
 
   // ── GPS transmission ownership + the shared cross-context cadence stamp ────────────────────
   // Exactly ONE side may write a record per 15s window, and which side that is follows the app
@@ -1006,14 +1115,23 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     const previousAvailable = isAvailable;
     setIsOnlineState(online);
     setIsAvailableState(online);
+    if (online) {
+      lastSuccessfulTelemetryAtRef.current = Date.now();
+      wasNoSignalRef.current = false;
+      autoOfflineTimeoutReachedRef.current = false;
+      setTelemetryStatus('online');
+      setAutoOfflineRemainingSeconds(null);
+    } else {
+      setTelemetryStatus('offline');
+      setAutoOfflineRemainingSeconds(null);
+      lastSuccessfulTelemetryAtRef.current = null;
+    }
     if (driver) {
-      // The backend is the authority on whether this driver may actually go online (e.g. TMO
-      // has suspended/revoked them since this screen last loaded) — a rejection here must revert
-      // the optimistic toggle and tell the driver why, not leave the UI showing "Online" while
-      // the server never accepted it.
+      // The backend is the authority on whether this driver may actually go online
       driverApi.updateOnlineStatus(online, online).catch((err: any) => {
         setIsOnlineState(previousOnline);
         setIsAvailableState(previousAvailable);
+        setTelemetryStatus(previousOnline ? 'online' : 'offline');
         showToast(
           err?.message || 'Could not update your online status. Please check your connection and try again.',
           'info'
@@ -1176,6 +1294,8 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       value={{
         isOnline,
         setIsOnline,
+        telemetryStatus,
+        autoOfflineRemainingSeconds,
         isAvailable,
         setIsAvailable,
         trackingMode,

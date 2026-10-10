@@ -24,13 +24,19 @@ import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
 import EditProfileModal from '../components/EditProfileModal';
 import ConfirmModal from '../components/ConfirmModal';
-import DriverGcashSettingsModal from '../components/DriverGcashSettingsModal';
+import {
+  getCachedGcashStatus,
+  prefetchDriverGcashQr,
+} from './DriverGcashQrScreen';
 import { useToast } from '../components/Toast';
 import { driverApi } from '../services/api';
+import { prefetchDriverQrCode } from './DriverQrCodeScreen';
+import { DriverGcashQrStatus } from '../types';
 
 interface DriverProfileScreenProps {
   onOpenTrackingSettings: () => void;
   onOpenQrCode: () => void;
+  onOpenGcashSettings: () => void;
 }
 
 // Help Center / About Trivora have no structured contact fields anywhere in the app (no
@@ -47,6 +53,7 @@ type ExpandableSection = 'info' | 'vehicle' | 'help' | 'about' | null;
 export default function DriverProfileScreen({
   onOpenTrackingSettings,
   onOpenQrCode,
+  onOpenGcashSettings,
 }: DriverProfileScreenProps) {
   const { showToast } = useToast();
   const { driver, logout, updateProfile, refreshProfile } = useDriverAuth();
@@ -54,8 +61,9 @@ export default function DriverProfileScreen({
   const [expanded, setExpanded] = useState<ExpandableSection>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [showGcashModal, setShowGcashModal] = useState(false);
-  const [gcashStatus, setGcashStatus] = useState<any>(null);
+  const [gcashStatus, setGcashStatus] = useState<DriverGcashQrStatus | null>(() =>
+    driver?.id ? getCachedGcashStatus(driver.id) : null
+  );
 
   // Same reasoning as the Passenger app's Profile screen: this screen only exists in the tree
   // while its tab is selected (App.tsx's state machine unmounts it otherwise), so mounting here
@@ -65,9 +73,14 @@ export default function DriverProfileScreen({
   // DriverShiftContext's own historyList poll, independent of this screen being open.
   useEffect(() => {
     refreshProfile();
-    driverApi.getGcashQr().then(setGcashStatus).catch(() => {});
+    if (driver?.id) {
+      prefetchDriverQrCode(driver.id);
+      prefetchDriverGcashQr(driver.id).then((fresh) => {
+        if (fresh) setGcashStatus(fresh);
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [driver?.id]);
 
   const toggleSection = (section: ExpandableSection) => {
     setExpanded((prev) => (prev === section ? null : section));
@@ -92,7 +105,8 @@ export default function DriverProfileScreen({
   const unitCode =
     driver?.tricycle?.unitCode ||
     (driver?.tricycle?.id ? `TRV-${String(driver.tricycle.id).padStart(3, '0')}` : '—');
-  const plateNumber = driver?.tricycle?.plateNumber || '—';
+  const capacityValue = driver?.tricycle?.passengerCapacity ?? null;
+  const capacityLabel = capacityValue != null ? `${capacityValue} seats` : 'Capacity not set';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -205,7 +219,7 @@ export default function DriverProfileScreen({
         label="Assigned QR Code"
         subtitle={
           driver?.tricycle
-            ? `Unit: ${unitCode} · Plate: ${plateNumber}`
+            ? `Unit: ${unitCode} · ${capacityLabel}`
             : 'Walk-in Scan to Ride'
         }
         onPress={onOpenQrCode}
@@ -218,11 +232,13 @@ export default function DriverProfileScreen({
         icon={QrCode}
         label="GCash QR & Settings"
         subtitle={
-          gcashStatus?.has_gcash_qr || gcashStatus?.configured || gcashStatus?.gcash_qr_url
+          gcashStatus === null
+            ? 'Checking status…'
+            : gcashStatus?.has_gcash_qr || gcashStatus?.configured || gcashStatus?.gcash_qr_url
             ? 'Configured'
             : 'Not Configured (Cash Only)'
         }
-        onPress={() => setShowGcashModal(true)}
+        onPress={onOpenGcashSettings}
       />
 
       {/* Support */}
@@ -261,11 +277,6 @@ export default function DriverProfileScreen({
         onSave={handleSaveProfile}
       />
 
-      <DriverGcashSettingsModal
-        visible={showGcashModal}
-        onClose={() => setShowGcashModal(false)}
-        onUpdated={(status) => setGcashStatus(status)}
-      />
 
       <ConfirmModal
         visible={showLogoutConfirm}

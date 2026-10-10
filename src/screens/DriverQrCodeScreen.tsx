@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  TouchableOpacity,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
@@ -13,12 +18,15 @@ import {
   QrCode,
   Download,
   Printer,
-  Info,
   ShieldCheck,
   AlertTriangle,
+  Users,
+  Minus,
+  Plus,
+  X,
+  ChevronRight,
 } from 'lucide-react-native';
 import ScreenHeader from '../components/ScreenHeader';
-import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
 import DriverQrCodeView, { downloadQrImage, downloadQrPdf } from '../components/DriverQrCodeView';
 import { useToast } from '../components/Toast';
@@ -28,42 +36,111 @@ interface DriverQrCodeScreenProps {
   onBack: () => void;
 }
 
+// In-memory module cache for 0ms instantaneous opening across screen transitions
+let cachedQrState: { driverId: number; data: DriverQrCodeData } | null = null;
+
+/**
+ * Prefetches the driver's QR code in the background (e.g. while on the Profile tab)
+ * so opening the Assigned QR Code screen is instantaneous with 0ms delay.
+ */
+export function prefetchDriverQrCode(driverId?: number): void {
+  if (!driverId) return;
+  if (cachedQrState && cachedQrState.driverId === driverId) return;
+
+  driverApi
+    .getDriverQrCode()
+    .then((res) => {
+      if (res?.qr_url) {
+        cachedQrState = { driverId, data: res };
+        AsyncStorage.setItem(`@trivora_driver_qr_code_${driverId}`, JSON.stringify(res)).catch(() => {});
+      }
+    })
+    .catch(() => {});
+}
+
 export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) {
   const { showToast } = useToast();
   const { driver, refreshProfile } = useDriverAuth();
-  const [qrData, setQrData] = useState<DriverQrCodeData | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+
+  // Instant in-memory cache initialization (0ms initial render if already visited or prefetched)
+  const initialCache =
+    cachedQrState && cachedQrState.driverId === driver?.id ? cachedQrState.data : null;
+
+  const [qrData, setQrData] = useState<DriverQrCodeData | null>(initialCache);
+  const [loading, setLoading] = useState<boolean>(!initialCache);
   const [downloadingImage, setDownloadingImage] = useState<boolean>(false);
   const [downloadingPdf, setDownloadingPdf] = useState<boolean>(false);
+  const [capacityInput, setCapacityInput] = useState<string>('');
+  const [savingCapacity, setSavingCapacity] = useState<boolean>(false);
+  const [capacityError, setCapacityError] = useState<string | null>(null);
+  const [showCapacityModal, setShowCapacityModal] = useState<boolean>(false);
 
+  // Stale-While-Revalidate: render cached data immediately, then silently sync in background
   useEffect(() => {
     let mounted = true;
-    setLoading(true);
-    refreshProfile();
-    driverApi.getDriverQrCode()
-      .then((res) => {
-        if (mounted) setQrData(res);
-      })
-      .catch(() => {
-        if (mounted) {
-          showToast('Could not load QR code information.', 'info');
-        }
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
+    const driverId = driver?.id;
+
+    const syncFreshData = () => {
+      driverApi
+        .getDriverQrCode()
+        .then((res) => {
+          if (!mounted) return;
+          setQrData(res);
+          if (driverId) {
+            cachedQrState = { driverId, data: res };
+            AsyncStorage.setItem(`@trivora_driver_qr_code_${driverId}`, JSON.stringify(res)).catch(() => {});
+          }
+        })
+        .catch(() => {
+          if (!mounted) return;
+          if (!qrData && !cachedQrState) {
+            showToast('Could not load QR code information.', 'info');
+          }
+        })
+        .finally(() => {
+          if (mounted) setLoading(false);
+        });
+    };
+
+    // Case 1: In-memory cache hit -> sync silently in background without blocking UI
+    if (cachedQrState && cachedQrState.driverId === driverId) {
+      syncFreshData();
+      return () => {
+        mounted = false;
+      };
+    }
+
+    // Case 2: Check persistent AsyncStorage cache before network
+    if (driverId) {
+      AsyncStorage.getItem(`@trivora_driver_qr_code_${driverId}`)
+        .then((raw) => {
+          if (!mounted) return;
+          if (raw) {
+            try {
+              const saved = JSON.parse(raw) as DriverQrCodeData;
+              if (saved?.qr_url) {
+                cachedQrState = { driverId, data: saved };
+                setQrData(saved);
+                setLoading(false);
+              }
+            } catch {}
+          }
+          syncFreshData();
+        })
+        .catch(() => {
+          if (mounted) syncFreshData();
+        });
+    } else {
+      syncFreshData();
+    }
 
     return () => {
       mounted = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [driver?.id]);
 
   const qrUrl = qrData?.qr_url;
-  const unitCode =
-    qrData?.unit_code ||
-    driver?.tricycle?.unitCode ||
-    (driver?.tricycle?.id ? `TRV-${String(driver.tricycle.id).padStart(3, '0')}` : '—');
   const stickerNumber =
     qrData?.sticker_number ||
     driver?.tricycle?.stickerNumber ||
@@ -71,14 +148,55 @@ export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) 
     '—';
   const plateNumber = qrData?.plate_number || driver?.tricycle?.plateNumber || '—';
   const capacityValue = qrData?.passenger_capacity ?? driver?.tricycle?.passengerCapacity;
-  const capacityLabel = capacityValue != null ? `${capacityValue} passengers` : 'Not Configured';
+  const capacityConfigured = capacityValue != null;
 
-  const statusTone =
-    qrData?.status === 'ready'
-      ? 'success'
-      : qrData?.status === 'capacity_required'
-      ? 'warning'
-      : 'neutral';
+  useEffect(() => {
+    if (!savingCapacity) {
+      setCapacityInput(capacityValue != null ? String(capacityValue) : '4');
+      setCapacityError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capacityValue]);
+
+  const currentCapacityNum = parseInt(capacityInput, 10) || (capacityValue ?? 4);
+
+  const handleStep = (delta: number) => {
+    const next = Math.min(6, Math.max(1, currentCapacityNum + delta));
+    setCapacityInput(String(next));
+    if (capacityError) setCapacityError(null);
+  };
+
+  const handleSaveCapacity = async () => {
+    const trimmed = capacityInput.trim();
+    const parsed = Number(trimmed);
+
+    if (!trimmed || !Number.isInteger(parsed) || parsed < 1 || parsed > 6) {
+      setCapacityError('Enter a whole number between 1 and 6.');
+      return;
+    }
+
+    setSavingCapacity(true);
+    setCapacityError(null);
+    try {
+      const res = await driverApi.updateQrCapacity(parsed);
+      setQrData((prev) => {
+        const next = prev ? { ...prev, passenger_capacity: res.passenger_capacity } : prev;
+        if (next && driver?.id) {
+          cachedQrState = { driverId: driver.id, data: next };
+          AsyncStorage.setItem(`@trivora_driver_qr_code_${driver.id}`, JSON.stringify(next)).catch(() => {});
+        }
+        return next;
+      });
+      showToast(`Passenger capacity set to ${res.passenger_capacity}.`, 'success');
+      refreshProfile();
+      setShowCapacityModal(false);
+    } catch (err: any) {
+      setCapacityError(err?.message || 'Could not save the passenger capacity.');
+      showToast('Could not save the passenger capacity.', 'info');
+    } finally {
+      setSavingCapacity(false);
+    }
+  };
 
   const handleDownloadImage = async () => {
     if (!qrUrl) {
@@ -88,7 +206,7 @@ export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) 
     setDownloadingImage(true);
     try {
       showToast('Downloading QR image…', 'info');
-      await downloadQrImage(qrUrl, `trivora-scan-to-ride-${unitCode}.png`);
+      await downloadQrImage(qrUrl, `trivora-scan-to-ride-${stickerNumber || 'tricycle'}.png`);
       showToast('QR image downloaded.', 'success');
     } catch {
       showToast('Could not download QR image.', 'info');
@@ -98,27 +216,38 @@ export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) 
   };
 
   const handleDownloadPdf = async () => {
-    const printUrl = qrData?.print_url;
-    if (!printUrl) {
-      showToast('Printable sheet is not available.', 'info');
+    if (!qrUrl) {
+      showToast('QR code is not available.', 'info');
       return;
     }
     setDownloadingPdf(true);
     try {
-      showToast('Opening printable QR sheet…', 'info');
-      await downloadQrPdf(printUrl);
+      showToast('Downloading QR PDF…', 'info');
+      await downloadQrPdf(qrUrl, {
+        stickerNumber,
+        plateNumber,
+        capacity: capacityValue,
+        filename: `trivora-scan-to-ride-${stickerNumber || 'tricycle'}.pdf`,
+      });
+      showToast('QR PDF downloaded.', 'success');
     } catch {
-      showToast('Could not open QR sheet.', 'info');
+      showToast('Could not download QR PDF.', 'info');
     } finally {
       setDownloadingPdf(false);
     }
+  };
+
+  const openCapacityModal = () => {
+    setCapacityInput(capacityValue != null ? String(capacityValue) : '4');
+    setCapacityError(null);
+    setShowCapacityModal(true);
   };
 
   return (
     <View style={styles.container}>
       <ScreenHeader title="Assigned QR Code" onBack={onBack} />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {loading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color={COLORS.primary} />
@@ -126,45 +255,46 @@ export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) 
           </View>
         ) : qrUrl ? (
           <>
-            {/* Status & QR Container */}
-            <View style={styles.mainCard}>
-              <View style={styles.cardHeader}>
-                <View style={styles.headerInfo}>
-                  <Text style={styles.cardTitle}>Walk-in Ride QR</Text>
-                  <Text style={styles.cardSubtitle}>Scan to Ride for Tricycle Unit {unitCode}</Text>
+            {/* HERO QR SECTION — Clean unboxed presentation */}
+            <View style={styles.heroSection}>
+              {/* Top Category Label Pill */}
+              <View style={styles.badgeRow}>
+                <View style={styles.unitPill}>
+                  <QrCode size={13} color={COLORS.primary} />
+                  <Text style={styles.unitPillLabel}>Walk-in QR</Text>
                 </View>
-                <StatusBadge
-                  label={qrData?.status_label || 'Ready'}
-                  tone={statusTone}
-                  size="sm"
-                />
               </View>
 
-              {/* Vector QR Code */}
-              <View style={styles.qrWrapper}>
-                <DriverQrCodeView value={qrUrl} size={210} />
+              {/* Vector QR Code in an elegant white frame */}
+              <View style={styles.qrStage}>
+                <View style={styles.qrFrame}>
+                  <DriverQrCodeView value={qrUrl} size={210} />
+                </View>
               </View>
 
-              <Text style={styles.qrInstructions}>
-                Point passengers to this QR code to initiate a quick scan-to-ride session.
+              {/* Titles & Instructions */}
+              <Text style={styles.heroTitle}>Walk-in Scan to Ride</Text>
+              <Text style={styles.heroSubtitle}>
+                Passengers scan this code to begin a quick metered trip session
               </Text>
 
+              {/* Note / Warning if capacity is required */}
               {qrData?.note ? (
                 <View
                   style={[
-                    styles.noteBox,
-                    qrData.status === 'capacity_required' && styles.noteBoxWarning,
+                    styles.alertBanner,
+                    qrData.status === 'capacity_required' && styles.alertBannerWarning,
                   ]}
                 >
-                  {qrData.status === 'capacity_required' ? (
-                    <AlertTriangle size={15} color={COLORS.amber} style={styles.noteIcon} />
-                  ) : (
-                    <Info size={15} color={COLORS.primary} style={styles.noteIcon} />
-                  )}
+                  <AlertTriangle
+                    size={15}
+                    color={qrData.status === 'capacity_required' ? COLORS.amberDark : COLORS.primary}
+                    style={styles.alertIcon}
+                  />
                   <Text
                     style={[
-                      styles.noteText,
-                      qrData.status === 'capacity_required' && styles.noteTextWarning,
+                      styles.alertText,
+                      qrData.status === 'capacity_required' && styles.alertTextWarning,
                     ]}
                   >
                     {qrData.note}
@@ -172,10 +302,10 @@ export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) 
                 </View>
               ) : null}
 
-              {/* Action Buttons */}
-              <View style={styles.actionsRow}>
+              {/* Action Buttons Row */}
+              <View style={styles.actionRow}>
                 <Button
-                  label="Download Image"
+                  label="Image"
                   icon={Download}
                   variant="outline"
                   size="md"
@@ -185,9 +315,9 @@ export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) 
                   style={styles.actionBtn}
                 />
                 <Button
-                  label="Download PDF"
+                  label="PDF"
                   icon={Printer}
-                  variant="outline"
+                  variant="primary"
                   size="md"
                   onPress={handleDownloadPdf}
                   loading={downloadingPdf}
@@ -197,62 +327,95 @@ export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) 
               </View>
             </View>
 
-            {/* Vehicle & Unit Details */}
-            <Text style={styles.sectionLabel}>ASSIGNED UNIT SPECIFICATIONS</Text>
-            <View style={styles.detailsCard}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Sticker Number</Text>
-                <Text style={styles.detailValue}>{stickerNumber}</Text>
+            {/* UNIFIED SPECIFICATIONS STRIP — Clean 2-part stat strip */}
+            <View style={styles.specsStrip}>
+              <View style={styles.specItem}>
+                <Text style={styles.specLabel}>STICKER #</Text>
+                <Text style={styles.specValue}>{stickerNumber}</Text>
               </View>
-              <View style={styles.divider} />
-
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Unit Code</Text>
-                <Text style={styles.detailValueHighlight}>{unitCode}</Text>
-              </View>
-              <View style={styles.divider} />
-
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Plate Number</Text>
-                <Text style={styles.detailValue}>{plateNumber}</Text>
-              </View>
-              <View style={styles.divider} />
-
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Passenger Capacity</Text>
-                <Text style={styles.detailValue}>{capacityLabel}</Text>
-              </View>
-              <View style={styles.divider} />
-
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>QR Status</Text>
-                <StatusBadge
-                  label={qrData?.status_label || 'Ready'}
-                  tone={statusTone}
-                  size="sm"
-                />
+              <View style={styles.specDivider} />
+              <View style={styles.specItem}>
+                <Text style={styles.specLabel}>PLATE #</Text>
+                <Text style={styles.specValue}>{plateNumber}</Text>
               </View>
             </View>
 
-            {/* How it works info card */}
-            <View style={styles.guideCard}>
-              <View style={styles.guideHeader}>
-                <ShieldCheck size={18} color={COLORS.primary} />
-                <Text style={styles.guideTitle}>Official Municipal Walk-in QR</Text>
+            {/* PASSENGER CAPACITY VIEW-ONLY CARD WITH LINK TO MODAL */}
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionLabel}>PASSENGER CAPACITY</Text>
+              {!capacityConfigured && (
+                <Text style={styles.sectionLabelWarning}>Action Required</Text>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={styles.capacityCard}
+              onPress={openCapacityModal}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Configure passenger capacity"
+            >
+              <View style={styles.capacityIconWrap}>
+                <Users size={18} color={COLORS.primary} />
               </View>
-              <Text style={styles.guideText}>
-                • Print and mount this A6 QR sheet visibly inside your tricycle cab.
-              </Text>
-              <Text style={styles.guideText}>
-                • Passengers scan using their phone camera or the Trivora Passenger App.
-              </Text>
-              <Text style={styles.guideText}>
-                • Fares and passenger headcounts are automatically logged into your driver trip session.
-              </Text>
+
+              <View style={styles.capacityInfoText}>
+                <Text style={styles.capacityTitle}>Passenger Capacity</Text>
+                <Text style={styles.capacitySubtitle} numberOfLines={1}>
+                  {capacityConfigured
+                    ? `${capacityValue} ${capacityValue === 1 ? 'seat' : 'seats'} configured`
+                    : 'Not configured · Tap to set'}
+                </Text>
+              </View>
+
+              <ChevronRight size={18} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+
+            {/* OFFICIAL GUIDELINES — Clean step list */}
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionLabel}>OFFICIAL WALK-IN GUIDELINES</Text>
+            </View>
+
+            <View style={styles.guidelinesList}>
+              <View style={styles.guideStepItem}>
+                <View style={styles.guideStepIconWrap}>
+                  <Printer size={15} color={COLORS.primary} />
+                </View>
+                <View style={styles.guideStepContent}>
+                  <Text style={styles.guideStepTitle}>Mount Inside Cabin</Text>
+                  <Text style={styles.guideStepDesc}>
+                    Print the A6 sheet and mount it visibly inside your tricycle cab.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.guideStepItem}>
+                <View style={styles.guideStepIconWrap}>
+                  <QrCode size={15} color={COLORS.primary} />
+                </View>
+                <View style={styles.guideStepContent}>
+                  <Text style={styles.guideStepTitle}>Passenger Scans to Board</Text>
+                  <Text style={styles.guideStepDesc}>
+                    Walk-in passengers scan via phone camera or Trivora Passenger App.
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.guideStepItem}>
+                <View style={styles.guideStepIconWrap}>
+                  <ShieldCheck size={15} color={COLORS.primary} />
+                </View>
+                <View style={styles.guideStepContent}>
+                  <Text style={styles.guideStepTitle}>Automated Trip Logging</Text>
+                  <Text style={styles.guideStepDesc}>
+                    Fares, seat occupancy, and trip details automatically record to your active shift.
+                  </Text>
+                </View>
+              </View>
             </View>
           </>
         ) : (
-          <View style={styles.emptyCard}>
+          <View style={styles.emptyContainer}>
             <View style={styles.emptyIconCircle}>
               <QrCode size={36} color={COLORS.textMuted} />
             </View>
@@ -264,6 +427,144 @@ export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) 
           </View>
         )}
       </ScrollView>
+
+      {/* BOTTOM MODAL FOR PASSENGER CAPACITY */}
+      <Modal
+        visible={showCapacityModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowCapacityModal(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setShowCapacityModal(false)}
+          />
+
+          <View style={styles.modalSheet}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={styles.modalTitle}>Passenger Capacity</Text>
+                <Text style={styles.modalSubtitle}>
+                  Set maximum authorized passengers for this unit
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={() => setShowCapacityModal(false)}
+                activeOpacity={0.7}
+                accessibilityLabel="Close"
+              >
+                <X size={20} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Stepper Control in Modal */}
+            <View style={styles.modalBody}>
+              <View style={styles.stepperContainer}>
+                <TouchableOpacity
+                  style={[styles.stepBtn, currentCapacityNum <= 1 && styles.stepBtnDisabled]}
+                  onPress={() => handleStep(-1)}
+                  disabled={currentCapacityNum <= 1 || savingCapacity}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Decrease capacity"
+                >
+                  <Minus
+                    size={20}
+                    color={currentCapacityNum <= 1 ? COLORS.textMuted : COLORS.textPrimary}
+                  />
+                </TouchableOpacity>
+
+                <View style={styles.stepInputWrap}>
+                  <Text
+                    style={[
+                      styles.stepValueText,
+                      capacityError ? styles.stepInputError : null,
+                    ]}
+                    accessibilityLabel={`Selected passenger capacity: ${currentCapacityNum}`}
+                  >
+                    {currentCapacityNum}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.stepBtn, currentCapacityNum >= 6 && styles.stepBtnDisabled]}
+                  onPress={() => handleStep(1)}
+                  disabled={currentCapacityNum >= 6 || savingCapacity}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Increase capacity"
+                >
+                  <Plus
+                    size={20}
+                    color={currentCapacityNum >= 6 ? COLORS.textMuted : COLORS.textPrimary}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Quick Select Preset Pills */}
+              <View style={styles.presetRow}>
+                {[1, 2, 3, 4, 5, 6].map((num) => {
+                  const isSelected = currentCapacityNum === num;
+                  return (
+                    <TouchableOpacity
+                      key={num}
+                      style={[styles.presetChip, isSelected && styles.presetChipSelected]}
+                      onPress={() => {
+                        setCapacityInput(String(num));
+                        if (capacityError) setCapacityError(null);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        style={[
+                          styles.presetChipText,
+                          isSelected && styles.presetChipTextSelected,
+                        ]}
+                      >
+                        {num}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {capacityError ? (
+                <Text style={styles.modalErrorText}>{capacityError}</Text>
+              ) : (
+                <Text style={styles.modalHint}>
+                  Tricycle seating capacity can be set from 1 up to 6 passengers. Walk-in QR rides enforce this limit automatically.
+                </Text>
+              )}
+            </View>
+
+            {/* Modal Action Buttons */}
+            <View style={styles.modalActionsRow}>
+              <Button
+                label="Cancel"
+                variant="outline"
+                size="md"
+                onPress={() => setShowCapacityModal(false)}
+                disabled={savingCapacity}
+                style={styles.modalActionBtn}
+              />
+              <Button
+                label={savingCapacity ? 'Saving…' : 'Save Capacity'}
+                variant="primary"
+                size="md"
+                onPress={handleSaveCapacity}
+                loading={savingCapacity}
+                disabled={savingCapacity}
+                style={styles.modalActionBtn}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -274,106 +575,115 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   content: {
-    padding: SPACING.md,
-    gap: SPACING.md,
-    paddingBottom: 48,
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.xxl,
+    gap: SPACING.lg,
   },
   loadingBox: {
-    paddingVertical: 64,
+    paddingVertical: 72,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
   },
   loadingText: {
-    fontSize: 13,
+    ...TYPOGRAPHY.bodySmall,
     color: COLORS.textSecondary,
     fontWeight: '600',
   },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: COLORS.textSecondary,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginTop: 4,
-  },
-  mainCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+
+  // Hero Section
+  heroSection: {
     alignItems: 'center',
-    ...SHADOWS.sm,
+    paddingTop: 0,
   },
-  cardHeader: {
+  badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: SPACING.md,
+    justifyContent: 'center',
     gap: 8,
+    marginBottom: SPACING.sm + 2,
   },
-  headerInfo: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-  },
-  cardSubtitle: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  qrWrapper: {
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: RADIUS.lg,
+  unitPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.surfaceInput,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    marginVertical: SPACING.sm,
+    borderColor: COLORS.borderLight,
+  },
+  unitPillLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  qrStage: {
     alignItems: 'center',
     justifyContent: 'center',
-    ...SHADOWS.sm,
+    marginVertical: SPACING.xs,
   },
-  qrInstructions: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
+  qrFrame: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: RADIUS.xxl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...SHADOWS.md,
+  },
+  heroTitle: {
+    ...TYPOGRAPHY.h2,
+    color: COLORS.textPrimary,
+    marginTop: SPACING.md,
     textAlign: 'center',
-    marginTop: 8,
-    marginHorizontal: 12,
+  },
+  heroSubtitle: {
+    ...TYPOGRAPHY.bodySmall,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+    textAlign: 'center',
+    paddingHorizontal: SPACING.md,
     lineHeight: 18,
   },
-  noteBox: {
+
+  // Alert Callout
+  alertBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.primaryTint,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginTop: 12,
-    width: '100%',
+    marginTop: SPACING.sm + 4,
     gap: 8,
+    maxWidth: 360,
+    width: '100%',
   },
-  noteBoxWarning: {
-    backgroundColor: '#FEF3C7',
+  alertBannerWarning: {
+    backgroundColor: COLORS.amberLight,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
   },
-  noteIcon: {
+  alertIcon: {
     flexShrink: 0,
   },
-  noteText: {
-    flex: 1,
-    fontSize: 12,
+  alertText: {
+    ...TYPOGRAPHY.caption,
     color: COLORS.primary,
     fontWeight: '600',
+    flex: 1,
     lineHeight: 16,
   },
-  noteTextWarning: {
-    color: '#92400E',
+  alertTextWarning: {
+    color: COLORS.amberDark,
   },
-  actionsRow: {
+
+  // Actions
+  actionRow: {
     flexDirection: 'row',
     gap: 10,
     marginTop: SPACING.lg,
@@ -382,73 +692,133 @@ const styles = StyleSheet.create({
   actionBtn: {
     flex: 1,
   },
-  detailsCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.xl,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    ...SHADOWS.sm,
-  },
-  detailRow: {
+
+  // Horizontal Specs Strip
+  specsStrip: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: COLORS.backgroundSubtle,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
     paddingVertical: 12,
+    paddingHorizontal: SPACING.xs,
   },
-  divider: {
-    height: StyleSheet.hairlineWidth,
+  specItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  specLabel: {
+    ...TYPOGRAPHY.label,
+    fontSize: 10,
+    color: COLORS.textMuted,
+  },
+  specValue: {
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  specValuePrimary: {
+    color: COLORS.primary,
+  },
+  specDivider: {
+    width: 1,
+    height: 24,
     backgroundColor: COLORS.border,
   },
-  detailLabel: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-    fontWeight: '500',
-  },
-  detailValue: {
-    fontSize: 13,
-    color: COLORS.textPrimary,
-    fontWeight: '700',
-  },
-  detailValueHighlight: {
-    fontSize: 13,
-    color: COLORS.primary,
-    fontWeight: '800',
-  },
-  guideCard: {
-    backgroundColor: COLORS.surfaceInput,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    gap: 8,
-  },
-  guideHeader: {
+
+  // Section Headers
+  sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
+    justifyContent: 'space-between',
+    marginTop: SPACING.xs,
+    marginBottom: -SPACING.xs,
   },
-  guideTitle: {
-    fontSize: 13,
-    fontWeight: '800',
+  sectionLabel: {
+    ...TYPOGRAPHY.label,
+    color: COLORS.textMuted,
+    letterSpacing: 0.6,
+  },
+  sectionLabelWarning: {
+    ...TYPOGRAPHY.caption,
+    fontSize: 11,
+    color: COLORS.amberDark,
+    fontWeight: '600',
+  },
+
+  // View-Only Capacity Row / Card
+  capacityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.backgroundSubtle,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.borderLight,
+    padding: SPACING.md,
+    gap: 12,
+  },
+  capacityIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primaryTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  capacityInfoText: {
+    flex: 1,
+    gap: 2,
+  },
+  capacityTitle: {
+    ...TYPOGRAPHY.bodyLarge,
     color: COLORS.textPrimary,
   },
-  guideText: {
-    fontSize: 12,
+  capacitySubtitle: {
+    ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
-    lineHeight: 18,
   },
-  emptyCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.xl,
-    padding: SPACING.xl,
+  // Guidelines List
+  guidelinesList: {
+    gap: SPACING.sm + 2,
+    paddingHorizontal: 2,
+  },
+  guideStepItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  guideStepIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: COLORS.surfaceInput,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginTop: 20,
-    ...SHADOWS.sm,
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  guideStepContent: {
+    flex: 1,
+    gap: 2,
+  },
+  guideStepTitle: {
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  guideStepDesc: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+  },
+
+  // Empty State
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xxl,
+    paddingHorizontal: SPACING.lg,
+    marginTop: SPACING.lg,
   },
   emptyIconCircle: {
     width: 68,
@@ -460,15 +830,149 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   emptyTitle: {
-    fontSize: 16,
-    fontWeight: '800',
+    ...TYPOGRAPHY.h2,
     color: COLORS.textPrimary,
     marginBottom: 8,
   },
   emptyDesc: {
-    fontSize: 13,
+    ...TYPOGRAPHY.bodySmall,
     color: COLORS.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: COLORS.background,
+    borderTopLeftRadius: RADIUS.xxl,
+    borderTopRightRadius: RADIUS.xxl,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: Platform.OS === 'ios' ? SPACING.xxl : SPACING.lg,
+    gap: SPACING.md + 2,
+    ...SHADOWS.sheet,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalTitle: {
+    ...TYPOGRAPHY.h2,
+    color: COLORS.textPrimary,
+  },
+  modalSubtitle: {
+    ...TYPOGRAPHY.bodySmall,
+    color: COLORS.textSecondary,
+  },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surfaceInput,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBody: {
+    alignItems: 'center',
+    gap: 16,
+    paddingVertical: SPACING.xs,
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surfaceInput,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 4,
+  },
+  stepBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.surface,
+    ...SHADOWS.sm,
+  },
+  stepBtnDisabled: {
+    opacity: 0.35,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  stepInputWrap: {
+    width: 64,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepValueText: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  stepInputError: {
+    color: COLORS.danger,
+  },
+  presetRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presetChip: {
+    minWidth: 42,
+    height: 38,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surfaceInput,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  presetChipSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  presetChipText: {
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  presetChipTextSelected: {
+    color: COLORS.textInverse,
+    fontWeight: '700',
+  },
+  modalHint: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: SPACING.sm,
+  },
+  modalErrorText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.danger,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  modalActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: SPACING.xs,
+  },
+  modalActionBtn: {
+    flex: 1,
   },
 });

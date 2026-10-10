@@ -323,6 +323,15 @@ export const driverApi = {
     return request<DriverQrCodeData>('/driver/qr-code');
   },
 
+  /** Sets the passenger capacity of the driver's own assigned tricycle (server resolves the
+   * tricycle from the authenticated driver; the QR token is never changed). */
+  updateQrCapacity: async (capacity: number): Promise<{ message: string; passenger_capacity: number }> => {
+    return request('/driver/qr-code/capacity', {
+      method: 'POST',
+      body: JSON.stringify({ passenger_capacity: capacity }),
+    });
+  },
+
   // --- Manual Ride — a trip the driver records for a walk-in passenger with no app. The server
   // sets the pick-up (the driver's own fresh GPS), distance and fare; the app sends only the
   // destination and party size, then the signed quote exactly as returned. {booking} is the code. ---
@@ -561,11 +570,13 @@ export function mapAuthResponseToDriverProfile(res: any, fallbackEmail?: string)
       unitCode: tricycle.unit_code || (tricycle.id ? `TRV-${String(tricycle.id).padStart(3, '0')}` : 'N/A'),
       stickerNumber: tricycle.sticker_number || tricycle.coding_scheme_number || null,
       passengerCapacity: tricycle.passenger_capacity ?? null,
+      codingStatus: res.coding_status || tricycle.coding_status || null,
     },
     rating: Number(rawDriver.rating ?? 5.0),
     totalTrips: Number(rawDriver.total_trips ?? 0),
     todayEarnings: Number(rawDriver.today_earnings ?? 0),
     avatarUrl: res.user?.profile_photo_url || undefined,
+    codingStatus: res.coding_status || tricycle.coding_status || null,
     franchiseStatus: franchise.status === 'suspended' || franchise.status === 'revoked' ? franchise.status : 'active',
     franchiseStatusReason: franchise.status_reason ?? null,
     franchiseStatusChangedAt: franchise.status_changed_at ?? null,
@@ -582,7 +593,7 @@ export function mapViolationRecordToCitation(raw: any): ViolationCitation {
   return {
     id: raw.id,
     citationNo: raw.citation_no,
-    type: raw.title,
+    type: raw.violation_type || raw.title,
     title: raw.title,
     description: raw.description || 'No additional details recorded.',
     fine: Number(raw.fine_amount ?? 0),
@@ -591,6 +602,7 @@ export function mapViolationRecordToCitation(raw: any): ViolationCitation {
         ' • ' +
         detectedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : 'N/A',
+    detectedAt: raw.detected_at || null,
     status: isResolved ? 'resolved' : 'pending',
     driverStatus: raw.driver_status,
     driverStatusLabel: raw.driver_status_label,
