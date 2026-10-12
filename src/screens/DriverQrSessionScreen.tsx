@@ -42,8 +42,9 @@ const sourceLabel = (p: QrSessionPassenger) => (p.source === 'walk_in' ? 'Walk-i
 /**
  * The driver's one ride session: QR passengers (joined by scanning the tricycle's QR) and walk-in
  * passengers (added here via Manual Ride) together — who is in, where each is going, their fare,
- * then Start Ride and one Drop Off per passenger. Passenger names aren't shown — only what the
- * driver needs to deliver each trip. Everything reflects the server's session (QrSessionContext).
+ * then Start Ride and one Drop Off per passenger. Each passenger is labelled with their name when
+ * the server knows it (a walk-in's recorded name, or a QR passenger's account name), falling back
+ * to "Passenger N". Everything reflects the server's session (QrSessionContext).
  */
 export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenProps) {
   const { session, busy, startRide, dropOff, removePassenger, endRide, refresh, markPaid } = useQrSession();
@@ -141,7 +142,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
   const routeIndex = routeFor ? passengers.findIndex((p) => p.booking_code === routeFor) : -1;
   const routePassenger = routeIndex >= 0 ? passengers[routeIndex] : null;
   if (routePassenger && routePassenger.status !== 'completed' && routePassenger.status !== 'cancelled') {
-    const label = `Passenger ${routeIndex + 1}`;
+    const label = routePassenger.passenger_name?.trim() || `Passenger ${routeIndex + 1}`;
     return (
       <>
         <QrPassengerRouteView
@@ -219,7 +220,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
           <Text style={styles.emptyBody}>No passengers are waiting.</Text>
         ) : (
           passengers.map((p, i) => {
-            const label = `Passenger ${i + 1}`;
+            const label = p.passenger_name?.trim() || `Passenger ${i + 1}`;
             const meta = STATUS_META[p.status] ?? STATUS_META.completed;
             const rowBusy = busy === p.booking_code;
             const isDone = p.status === 'completed';
@@ -233,6 +234,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
                   </View>
 
                   <View style={styles.rowBody}>
+                    <Text style={[styles.rowName, isDone && styles.muted]} numberOfLines={1}>{label}</Text>
                     <View style={styles.destLine}>
                       <MapPin size={13} color={isDone ? COLORS.textMuted : COLORS.danger} />
                       <Text style={[styles.rowDest, isDone && styles.muted]} numberOfLines={2}>{p.dropoff.name}</Text>
@@ -483,6 +485,7 @@ const styles = StyleSheet.create({
   numDone: { backgroundColor: COLORS.successLight },
   numText: { ...TYPOGRAPHY.bodySmall, fontWeight: '700', color: COLORS.primary },
   rowBody: { flex: 1, gap: 3 },
+  rowName: { ...TYPOGRAPHY.bodyLarge, fontWeight: '700', color: COLORS.textPrimary },
   destLine: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   rowDest: { ...TYPOGRAPHY.bodyLarge, color: COLORS.textPrimary, flex: 1 },
   rowMeta: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },

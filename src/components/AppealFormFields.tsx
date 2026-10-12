@@ -20,7 +20,7 @@ const MIN_REASON_LENGTH = 10;
 /**
  * The interactive appeal controls — reason input + optional evidence photo taken with the device
  * camera (gallery/file selection is deliberately unavailable) — embedded directly inside
- * ViolationDetailModal's own scroll content, not presented as a separate modal. No outer
+ * ViolationDetailScreen's own scroll content, not presented as a separate form. No outer
  * Modal/header/violation-reference chrome here; the violation itself is already fully visible
  * above wherever this is rendered.
  */

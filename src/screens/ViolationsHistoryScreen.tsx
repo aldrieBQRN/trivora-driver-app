@@ -8,7 +8,7 @@ import EmptyState from '../components/EmptyState';
 import ScreenHeader from '../components/ScreenHeader';
 import StatusBadge from '../components/StatusBadge';
 import FilterTabs from '../components/FilterTabs';
-import ViolationDetailModal, { violationTone } from '../components/ViolationDetailModal';
+import ViolationDetailScreen, { violationTone } from './ViolationDetailScreen';
 
 type FilterTab = 'All' | 'Pending' | 'Resolved';
 
@@ -23,7 +23,7 @@ export default function ViolationsHistoryScreen() {
   const [activeFilter, setActiveFilter] = useState<FilterTab>('All');
   // Holds only the id, not a snapshot of the violation itself — derived live from `violations`
   // below so that a submitted appeal (which updates that array) is reflected immediately in the
-  // still-open detail modal, instead of the modal being stuck showing whatever the violation
+  // still-open detail view, instead of the detail being stuck showing whatever the violation
   // looked like at the moment it was tapped.
   const [selectedViolationId, setSelectedViolationId] = useState<number | null>(null);
   const selectedViolation = violations.find((v) => v.id === selectedViolationId) ?? null;
@@ -77,6 +77,10 @@ export default function ViolationsHistoryScreen() {
   const showInitialLoading = isLoadingViolations && violations.length === 0;
   const showLoadError = !isLoadingViolations && violationsError && violations.length === 0;
 
+  if (selectedViolation) {
+    return <ViolationDetailScreen violation={selectedViolation} onBack={() => setSelectedViolationId(null)} />;
+  }
+
   return (
     <View style={styles.container}>
       <ScreenHeader title="Violations" />
@@ -129,12 +133,6 @@ export default function ViolationsHistoryScreen() {
           />
         </>
       )}
-
-      <ViolationDetailModal
-        visible={selectedViolation !== null}
-        violation={selectedViolation}
-        onClose={() => setSelectedViolationId(null)}
-      />
     </View>
   );
 }

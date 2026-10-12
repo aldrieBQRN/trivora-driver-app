@@ -372,6 +372,8 @@ export interface ManualRideQuote {
 export interface ManualRide {
   booking_code: string;
   status: 'accepted' | 'in_transit' | 'completed' | 'cancelled';
+  /** The walk-in passenger's recorded name (no app account). */
+  passenger_name?: string | null;
   party_size: number;
   pickup: { name: string; lat: number; lng: number };
   dropoff: { name: string; lat: number; lng: number };

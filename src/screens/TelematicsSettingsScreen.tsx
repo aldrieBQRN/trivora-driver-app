@@ -111,7 +111,7 @@ export default function TelematicsSettingsScreen({ onBack }: TelematicsSettingsS
               style={styles.input}
               value={inputIotId}
               onChangeText={setInputIotId}
-              placeholder="e.g. TRV-IOT-0842"
+              placeholder="Enter serial printed on the device label"
               placeholderTextColor={COLORS.textMuted}
             />
           </View>

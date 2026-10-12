@@ -32,8 +32,8 @@ interface ManualRideContextType {
     input: { party_size: number; dropoff_name: string; dropoff_lat: number; dropoff_lng: number },
     options?: { signal?: AbortSignal }
   ) => Promise<ManualRideQuote>;
-  /** Add the walk-in passenger (signed quote) to the tricycle's ride session. */
-  add: (signedQuote: string, paymentMethod?: string) => Promise<void>;
+  /** Add the walk-in passenger (signed quote + name) to the tricycle's ride session. */
+  add: (signedQuote: string, passengerName: string, paymentMethod?: string) => Promise<void>;
   complete: () => Promise<boolean>;
   cancel: (reason?: string) => Promise<boolean>;
   /** 'add' | 'complete' | 'cancel' while a request is running. */
@@ -44,6 +44,11 @@ const ManualRideContext = createContext<ManualRideContextType | null>(null);
 
 /** Only the API's own rejections (coded, or 403/409/422) are shown as-is; anything else is generic. */
 export function toManualRideError(err: any, fallback: string): ManualRideError {
+  // A timeout is its own outcome — never conflated with a user-triggered cancel (swallowed by
+  // callers) or a generic connection failure.
+  if (err?.name === 'TimeoutError' || err?.code === 'timeout') {
+    return { code: 'timeout', message: fallback };
+  }
   if (err && err.status === undefined) {
     return { code: 'network', message: 'Could not reach Trivora. Check your connection and try again.' };
   }
@@ -105,9 +110,9 @@ export function ManualRideProvider({ children }: { children: React.ReactNode }) 
   // hands the session to QrSessionContext, whose screen then runs Start / Drop Off for everyone.
   // A retry after a dropped connection re-sends the same quote, which the server recognises, so
   // the passenger is never added twice.
-  const add = useCallback(async (signedQuote: string, paymentMethod?: string) => {
+  const add = useCallback(async (signedQuote: string, passengerName: string, paymentMethod?: string) => {
     await run('add', async () => {
-      const res = await driverApi.manualRideAdd(signedQuote, paymentMethod);
+      const res = await driverApi.manualRideAdd(signedQuote, passengerName, paymentMethod);
       adoptSession(res.ride);
       setIsOpen(false);
       showToast('Walk-in passenger added.');

@@ -80,6 +80,10 @@ export function setOnUnauthorized(handler: UnauthorizedHandler | null) {
   unauthorizedHandler = handler;
 }
 
+/** Upper bound on any single API request. Long enough for a slow routing-backed quote, short
+ * enough that a stalled connection surfaces as a retryable timeout instead of a hang. */
+const REQUEST_TIMEOUT_MS = 15000;
+
 async function request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   // FormData bodies (appeal proof upload) must NOT get a manual Content-Type — fetch/RN needs to
@@ -92,10 +96,48 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
     ...(options.headers as Record<string, string>),
   };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  // Compose a caller signal (e.g. AbortController on a superseded quote) with our own timeout so
+  // a user-triggered cancellation and a timeout stay distinguishable to the caller.
+  const callerSignal = options.signal ?? undefined;
+  const controller = new AbortController();
+  let callerAborted = callerSignal?.aborted ?? false;
+  let timedOut = false;
+
+  const onCallerAbort = () => {
+    callerAborted = true;
+    controller.abort();
+  };
+  if (callerSignal && !callerSignal.aborted) {
+    callerSignal.addEventListener('abort', onCallerAbort);
+  } else if (callerSignal?.aborted) {
+    controller.abort();
+  }
+
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(url, { ...options, headers, signal: controller.signal });
+  } catch (err) {
+    if (timedOut) {
+      const timeoutError = new Error('Trivora took too long to respond.') as any;
+      timeoutError.name = 'TimeoutError';
+      timeoutError.code = 'timeout';
+      throw timeoutError;
+    }
+    if (callerAborted) {
+      const abortError = new Error('Request aborted.') as any;
+      abortError.name = 'AbortError';
+      throw abortError;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener('abort', onCallerAbort);
+  }
 
   const data = await response.json().catch(() => null);
 
@@ -228,7 +270,7 @@ export const driverApi = {
   // Appends to the tricycle_locations violation-detection log AND updates the driver's own
   // current_lat/current_lng (DriverTelematicsController::store does both in one request as of
   // the GPS-interval retune), so this single call is now what the Passenger app's active-booking
-  // polling reads too — the shift watcher no longer needs a separate updateLocation call.
+  // polling reads too — the shift watcher sends GPS through this endpoint only.
   sendTelematics: async (telemetry: any) => {
     return request('/driver/telematics', {
       method: 'POST',
@@ -246,16 +288,8 @@ export const driverApi = {
     });
   },
 
-  // Kept for the passenger-facing active-booking path (BookingController::updateDriverLocation),
-  // which may still want a tighter-than-15s cadence during an active ride in a future pass — the
-  // shift-wide watcher itself no longer calls this, since sendTelematics now covers current_lat/
-  // current_lng too.
-  updateLocation: async (driverId: number | string, latitude: number, longitude: number) => {
-    return request(`/driver/location?driver_id=${driverId}`, {
-      method: 'POST',
-      body: JSON.stringify({ latitude, longitude }),
-    });
-  },
+  // Removed: the legacy /driver/location endpoint (BookingController::updateDriverLocation) was
+  // deleted — sendTelematics covers current_lat/current_lng in the same request as the GPS ping.
 
   setTrackingMode: async (mode: string, iotDeviceId: string | null = null) => {
     return request('/driver/telemetry-mode', {
@@ -353,10 +387,10 @@ export const driverApi = {
   },
 
   /** Adds the walk-in passenger to the tricycle's one open ride session (created if none). Retry-safe per quote. */
-  manualRideAdd: async (quote: string, paymentMethod?: string): Promise<{ message: string; booking: ManualRide; ride: QrSession }> => {
+  manualRideAdd: async (quote: string, passengerName: string, paymentMethod?: string): Promise<{ message: string; booking: ManualRide; ride: QrSession }> => {
     return request('/driver/manual-ride/add', {
       method: 'POST',
-      body: JSON.stringify({ quote, payment_method: paymentMethod || 'cash' }),
+      body: JSON.stringify({ quote, passenger_name: passengerName, payment_method: paymentMethod || 'cash' }),
     });
   },
 
@@ -565,7 +599,7 @@ export function mapAuthResponseToDriverProfile(res: any, fallbackEmail?: string)
       plateNumber: tricycle.plate_number || 'N/A',
       codingNumber: tricycle.coding_scheme_number || tricycle.body_number || 'N/A',
       model: tricycle.make_model || `${tricycle.make || ''} ${tricycle.model || ''}`.trim() || 'N/A',
-      iotDeviceId: undefined,
+      iotDeviceId: tricycle.iot_device_id || undefined,
       activeTrackingMode: tricycle.active_tracking_mode === 'iot_device' ? 'iot_device' : 'mobile_app',
       unitCode: tricycle.unit_code || (tricycle.id ? `TRV-${String(tricycle.id).padStart(3, '0')}` : 'N/A'),
       stickerNumber: tricycle.sticker_number || tricycle.coding_scheme_number || null,

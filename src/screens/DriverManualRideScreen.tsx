@@ -1,15 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, LayoutChangeEvent, Modal, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, CheckCircle2, ChevronRight, Minus, Plus, Satellite, SignalLow, AlertCircle, Search, MapPinned, Banknote, Smartphone } from 'lucide-react-native';
+import { MapPin, CheckCircle2, ChevronRight, Minus, Plus, Satellite, SignalLow, AlertCircle, Search, MapPinned, Banknote, Smartphone, User } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useManualRide, toManualRideError, ManualRideError } from '../context/ManualRideContext';
 import { useQrSession } from '../context/QrSessionContext';
 import { useDriverShift } from '../context/DriverShiftContext';
+import { useDriverAuth } from '../context/DriverAuthContext';
 import { useLiveRoute } from '../hooks/useLiveRoute';
 import { haversineKm } from '../utils/geo';
 import ScreenHeader from '../components/ScreenHeader';
 import Button from '../components/Button';
+import FormField from '../components/FormField';
 import ConfirmModal from '../components/ConfirmModal';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
 import DestinationSearchModal, { SelectedDestination } from '../components/DestinationSearchModal';
@@ -37,12 +39,15 @@ export default function DriverManualRideScreen() {
 function ManualRideSetup() {
   const { close, quote: requestQuote, add, busy } = useManualRide();
   const { session } = useQrSession();
+  const { driver } = useDriverAuth();
   // Adding to a ride that is already boarding (QR and/or walk-in passengers waiting).
   const joiningSession = session?.session.status === 'boarding' ? session.session : null;
+  const tricycleCapacity = driver?.tricycle?.passengerCapacity ?? null;
   const { currentLat, currentLng, isLocatingDriver } = useDriverShift();
   const hasGps = currentLat != null && currentLng != null;
 
   const [destination, setDestination] = useState<SelectedDestination | null>(null);
+  const [passengerName, setPassengerName] = useState('');
   const [partySize, setPartySize] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [driverGcash, setDriverGcash] = useState<DriverGcashQrStatus | null>(null);
@@ -55,9 +60,24 @@ function ManualRideSetup() {
   const [addError, setAddError] = useState<ManualRideError | null>(null);
   const [isAdding, setIsAdding] = useState<boolean>(false);
   // Seats still free in the ride (shared with everyone already in it), from the latest server read.
-  const [seatsLeft, setSeatsLeft] = useState<number | null>(joiningSession ? joiningSession.seats_remaining : null);
+  // Before the first quote, fall back to the tricycle's recorded capacity so the stepper is bounded.
+  const [seatsLeft, setSeatsLeft] = useState<number | null>(
+    joiningSession?.seats_remaining ?? tricycleCapacity
+  );
   const requestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // A quote is only a confirmed fare when it was produced for the destination and party size now on
+  // screen; any value we still hold is shown as a labelled estimate and cannot be added.
+  const currentSignature = destination
+    ? `${destination.lat}|${destination.lng}|${destination.name}|${partySize}`
+    : null;
+  const requestedSignatureRef = useRef<string | null>(null);
+  const [quoteSignature, setQuoteSignature] = useState<string | null>(null);
+  useEffect(() => {
+    setQuoteSignature(quote ? requestedSignatureRef.current : null);
+  }, [quote]);
+  const quoteFresh = !!quote && quoteSignature != null && quoteSignature === currentSignature;
 
   useEffect(() => {
     driverApi.getGcashQr().then(setDriverGcash).catch(() => {});
@@ -69,6 +89,7 @@ function ManualRideSetup() {
     const dest = targetDest ?? destination;
     const party = targetParty ?? partySize;
     if (!dest) return;
+    requestedSignatureRef.current = `${dest.lat}|${dest.lng}|${dest.name}|${party}`;
 
     const requestId = ++requestIdRef.current;
     if (abortControllerRef.current) {
@@ -101,8 +122,8 @@ function ManualRideSetup() {
   };
 
   // A fresh server quote whenever the destination or passenger count changes, debounced by ~300ms.
+  // The previous quote is kept on screen (labelled as an estimate) while the new one loads.
   useEffect(() => {
-    setQuote(null);
     if (!destination) {
       setIsQuoting(false);
       return;
@@ -117,16 +138,24 @@ function ManualRideSetup() {
     };
   }, [destination?.lat, destination?.lng, destination?.name, partySize]);
 
+  // If the server's remaining seats shrink (a QR passenger joined), keep the party within them.
+  useEffect(() => {
+    if (seatsLeft != null && partySize > seatsLeft) {
+      setPartySize(Math.max(1, seatsLeft));
+    }
+  }, [seatsLeft, partySize]);
+
   const maxParty = seatsLeft ?? null;
   const canIncrease = maxParty == null || partySize < maxParty;
+  const hasName = passengerName.trim().length > 0;
 
   const handleAdd = async () => {
-    if (!quote || isAdding || !!busy) return;
+    if (!quote || !quoteFresh || !hasName || isAdding || !!busy) return;
     setIsAdding(true);
     setAddError(null);
     try {
       // On a dropped connection the same quote is simply sent again — the server adds it once.
-      await add(quote.quote, paymentMethod);
+      await add(quote.quote, passengerName.trim(), paymentMethod);
     } catch (err: any) {
       if (err?.message === 'busy') return;
       const error = toManualRideError(err, "Couldn't add the passenger.");
@@ -214,6 +243,18 @@ function ManualRideSetup() {
           </View>
         </View>
 
+        {/* The walk-in has no app account, so the driver records their name for the ride session. */}
+        <View style={styles.nameField}>
+          <FormField
+            label="Passenger name"
+            icon={User}
+            value={passengerName}
+            onChangeText={setPassengerName}
+            placeholder="e.g. Juan Dela Cruz"
+            autoCapitalize="words"
+          />
+        </View>
+
         {/* Payment Method */}
         <Text style={styles.sectionLabel}>Payment Method</Text>
         <View style={styles.paymentMethodRow}>
@@ -265,6 +306,20 @@ function ManualRideSetup() {
         <Text style={styles.sectionLabel}>Fare</Text>
         {!destination ? (
           <Text style={styles.hint}>Choose a destination to calculate the fare.</Text>
+        ) : quote && (!quoteFresh || isQuoting) ? (
+          <View>
+            <View style={styles.loadingRow}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.hint}>Estimated fare · updating…</Text>
+            </View>
+            <FareLine label="Distance" value={`${Number(quote.distance_km).toFixed(1)} km${quote.distance_source === 'fallback' ? ' (est.)' : ''}`} />
+            <FareLine label="Fare per passenger" value={peso(quote.fare_per_passenger)} />
+            <FareLine label="Passengers" value={`× ${quote.party_size}`} />
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Estimated total</Text>
+              <Text style={[styles.totalValue, styles.estimateValue]}>{peso(quote.fare_amount)}</Text>
+            </View>
+          </View>
         ) : isQuoting ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator size="small" color={COLORS.primary} />
@@ -298,7 +353,7 @@ function ManualRideSetup() {
         {addError ? <Text style={[styles.errorText, styles.footerError]}>{addError.message}</Text> : null}
         <View style={styles.footerRow}>
           <View style={styles.flex}>
-            <Text style={styles.caption}>Total fare</Text>
+            <Text style={styles.caption}>{quoteFresh ? 'Total fare' : 'Estimated total'}</Text>
             {quote ? (
               <Text style={styles.footerValue}>{peso(quote.fare_amount)}</Text>
             ) : (
@@ -309,7 +364,7 @@ function ManualRideSetup() {
             label="Add Passenger"
             onPress={handleAdd}
             loading={busy === 'add' || isAdding}
-            disabled={!quote || isQuoting || !!busy || isAdding}
+            disabled={!quoteFresh || !hasName || isQuoting || !!busy || isAdding}
             fullWidth={false}
             style={styles.footerBtn}
           />
@@ -418,7 +473,7 @@ function ManualRideInProgress({ ride }: { ride: ManualRide }) {
         setPaymentTarget({
           bookingId: ride.booking_code,
           bookingCode: ride.booking_code,
-          passengerName: 'Walk-in Passenger',
+          passengerName: ride.passenger_name || 'Walk-in Passenger',
           fare: Number(ride.fare_amount || 0),
           paymentMethod: ride.payment_method || 'cash',
           paymentStatus: 'unpaid',
@@ -565,6 +620,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
     borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.lg,
   },
+  nameField: { marginTop: SPACING.md },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   stepBtn: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center' },
   stepBtnDisabled: { opacity: 0.35 },
@@ -581,6 +637,7 @@ const styles = StyleSheet.create({
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: COLORS.borderLight, marginTop: SPACING.xs, paddingVertical: SPACING.sm + 2 },
   totalLabel: { ...TYPOGRAPHY.bodyLarge, color: COLORS.textPrimary },
   totalValue: { ...TYPOGRAPHY.h2, color: COLORS.textPrimary },
+  estimateValue: { color: COLORS.textMuted },
   note: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
   footer: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.sm + 4, paddingBottom: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.border, gap: SPACING.xs },
   footerError: { textAlign: 'center' },

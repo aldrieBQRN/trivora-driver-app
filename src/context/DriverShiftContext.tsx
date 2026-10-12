@@ -204,7 +204,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     driver?.tricycle?.activeTrackingMode || 'mobile_app'
   );
   const [iotDeviceId, setIotDeviceId] = useState<string>(
-    driver?.tricycle?.iotDeviceId || 'TRV-IOT-0842'
+    driver?.tricycle?.iotDeviceId || ''
   );
 
   // Mirrored to AsyncStorage so the background location task (locationTask.ts) — which runs
@@ -213,6 +213,25 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     AsyncStorage.setItem(TRACKING_MODE_STORAGE_KEY, trackingMode).catch(() => {});
   }, [trackingMode]);
+
+  // DriverShiftProvider mounts at the app root, before DriverAuthProvider has restored/logged in a
+  // driver, so the two useState initialisers above can never see the real server values. Without
+  // this sync an IoT-configured unit would silently stay on the mobile_app default (and its pings
+  // would now be correctly refused by the server). Runs once per driver session — keyed on driver
+  // id — so it neither fights a mid-session change made via updateTrackingMode nor re-runs on
+  // unrelated profile refreshes for the same driver.
+  const syncedTrackingDriverIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    const id = driver?.id ?? null;
+    if (id == null) {
+      syncedTrackingDriverIdRef.current = null;
+      return;
+    }
+    if (syncedTrackingDriverIdRef.current === id) return;
+    syncedTrackingDriverIdRef.current = id;
+    setTrackingMode(driver?.tricycle?.activeTrackingMode === 'iot_device' ? 'iot_device' : 'mobile_app');
+    setIotDeviceId(driver?.tricycle?.iotDeviceId || '');
+  }, [driver?.id]);
 
   // Real device GPS — no seeded/default coordinate. Starts null; the mount effect below (and,
   // while online, the continuous watcher) are the only things that ever set a real fix.
