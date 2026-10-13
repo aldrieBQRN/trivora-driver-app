@@ -18,6 +18,7 @@ const DRIVER_ONBOARDING_STORAGE_KEY = '@trivora_driver_onboarding_done';
 // Auth flow screens
 import DriverOnboardingScreen from './src/screens/DriverOnboardingScreen';
 import DriverAuthScreen from './src/screens/DriverAuthScreen';
+import DriverForgotPasswordScreen from './src/screens/DriverForgotPasswordScreen';
 import DriverFranchiseVerificationScreen from './src/screens/DriverFranchiseVerificationScreen';
 import DriverRegistrationScreen from './src/screens/DriverRegistrationScreen';
 import DriverSetPasswordScreen from './src/screens/DriverSetPasswordScreen';
@@ -42,7 +43,7 @@ import { Home, History, ShieldAlert, Wallet, User } from 'lucide-react-native';
 import CurvedTabBar, { CurvedTab } from './src/components/CurvedTabBar';
 import { PendingAccountInfo } from './src/types';
 
-type AuthScreenKey = 'splash' | 'login' | 'verify' | 'register' | 'set_password';
+type AuthScreenKey = 'splash' | 'login' | 'forgot_password' | 'verify' | 'register' | 'set_password';
 type PrimaryTab = 'home' | 'trips' | 'violations' | 'earnings' | 'profile';
 
 const PRIMARY_TABS: CurvedTab<PrimaryTab>[] = [
@@ -168,8 +169,11 @@ function DriverAppNavigator() {
             <DriverAuthScreen
               onBack={() => setAuthScreen('splash')}
               onGoToRegister={() => setAuthScreen('verify')}
+              onForgotPassword={() => setAuthScreen('forgot_password')}
             />
           );
+        case 'forgot_password':
+          return <DriverForgotPasswordScreen onBack={() => setAuthScreen('login')} />;
         case 'verify':
           return (
             <DriverFranchiseVerificationScreen

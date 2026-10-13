@@ -15,7 +15,7 @@ import { useDriverAuth } from '../context/DriverAuthContext';
 import { useNetwork } from '../context/NetworkContext';
 import { driverApi, mapAuthResponseToDriverProfile, getApiBaseUrl } from '../services/api';
 import { DriverProfile } from '../types';
-import { Lock, Eye, EyeOff, Check, Phone } from 'lucide-react-native';
+import { Lock, Eye, EyeOff, Check, Mail } from 'lucide-react-native';
 import { TricycleIcon } from '../components/icons';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
@@ -23,6 +23,7 @@ import Button from '../components/Button';
 interface DriverAuthScreenProps {
   onBack: () => void;
   onGoToRegister: () => void;
+  onForgotPassword: () => void;
 }
 
 const DEMO_DRIVER: DriverProfile = {
@@ -56,36 +57,25 @@ const DEMO_DRIVER: DriverProfile = {
 };
 
 /** Driver sign-in screen — reached via the splash's "Login with Account" button (not pictured in the 12-screen mockup).
- * Login uses the driver's EXISTING registered mobile number + password — the same credential
- * the owner web portal uses; email-based login was removed from the flow entirely. */
-export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenProps) {
+ * Login is email-only: the account email + password — the same credential the web portal
+ * uses. The email is the one entered when the Driver App account was registered. */
+export default function DriverAuthScreen({ onGoToRegister, onForgotPassword }: DriverAuthScreenProps) {
   const { login } = useDriverAuth();
   const { isConnected, checkConnection } = useNetwork();
 
-  const [mobile, setMobile] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ mobile?: string; password?: string; form?: string }>({});
-
-  // There's no password-reset endpoint in the backend, so this doesn't pretend to send a reset
-  // link — it points to the same real support contact already shown on the Profile screen.
-  const handleForgotPassword = () => {
-    Alert.alert(
-      'Forgot Password?',
-      'For assistance, contact the Nasugbu TMO or the Nasugbu BPLO.'
-    );
-  };
+  const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
 
   const handleLogin = async () => {
     const nextErrors: typeof errors = {};
-    const digits = mobile.replace(/\D/g, '');
-    if (!digits) nextErrors.mobile = 'Mobile number is required.';
-    // Accepts the local 09… form, the bare 9… form, and the +63…/63… forms — the backend
-    // resolves every equivalent of the same stored number to the same account.
-    else if (!/^(?:09\d{9}|9\d{9}|639\d{9})$/.test(digits)) {
-      nextErrors.mobile = 'Enter a valid mobile number (e.g. 0917 123 4567).';
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) nextErrors.email = 'Email address is required.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      nextErrors.email = 'Enter a valid email address (e.g. name@example.com).';
     }
     if (!password.trim()) nextErrors.password = 'Password is required.';
     setErrors(nextErrors);
@@ -95,20 +85,20 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
     try {
       let res;
       try {
-        res = await driverApi.login(mobile.trim(), password);
+        res = await driverApi.login(trimmedEmail, password);
       } catch (firstErr: any) {
         if (firstErr?.status !== undefined) {
           throw firstErr;
         }
         // Brief pause and auto-retry once in case of mobile network handshake delay
         await new Promise((r) => setTimeout(r, 1500));
-        res = await driverApi.login(mobile.trim(), password);
+        res = await driverApi.login(trimmedEmail, password);
       }
       login(mapAuthResponseToDriverProfile(res), res.token);
     } catch (err: any) {
       if (err?.status !== undefined) {
         // The backend was reached and rejected the credentials
-        setErrors({ form: err.message || 'Incorrect mobile number or password. Please try again.' });
+        setErrors({ form: err.message || 'Incorrect email or password. Please try again.' });
         return;
       }
       // Backend unreachable or offline — alert user with retry or demo mode option
@@ -120,7 +110,7 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
           {
             text: 'Continue in Demo Mode',
             onPress: () => {
-              login({ ...DEMO_DRIVER, mobile: mobile.trim() });
+              login({ ...DEMO_DRIVER, email: trimmedEmail });
             },
           },
         ]
@@ -160,16 +150,17 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
           )}
 
           <FormField
-            label="Mobile Number"
-            icon={Phone}
-            placeholder="0917 123 4567"
-            value={mobile}
+            label="Email Address"
+            icon={Mail}
+            placeholder="e.g. juan@example.com"
+            value={email}
             onChangeText={(v) => {
-              setMobile(v);
-              if (errors.mobile) setErrors((e) => ({ ...e, mobile: undefined }));
+              setEmail(v);
+              if (errors.email) setErrors((e) => ({ ...e, email: undefined }));
             }}
-            keyboardType="phone-pad"
-            error={errors.mobile}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            error={errors.email}
           />
 
           <FormField
@@ -206,7 +197,7 @@ export default function DriverAuthScreen({ onGoToRegister }: DriverAuthScreenPro
               <Text style={styles.checkboxLabel}>Remember me</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
+            <TouchableOpacity onPress={onForgotPassword} activeOpacity={0.7}>
               <Text style={styles.forgotLinkText}>Forgot password?</Text>
             </TouchableOpacity>
           </View>

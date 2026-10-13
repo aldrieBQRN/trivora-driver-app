@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { X } from 'lucide-react-native';
 
@@ -26,6 +27,8 @@ export default function LegalDocumentModal({
   updatedLabel,
   sections,
 }: LegalDocumentModalProps) {
+  // Bottom sheet clears the phone's navigation bar (gesture or 3-button).
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -40,7 +43,7 @@ export default function LegalDocumentModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + SPACING.sm, Platform.OS === 'ios' ? 34 : SPACING.lg) }]}>
             {sections.map((section) => (
               <View key={section.heading} style={styles.section}>
                 <Text style={styles.sectionHeading}>{section.heading}</Text>

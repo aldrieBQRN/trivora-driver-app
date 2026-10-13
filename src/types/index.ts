@@ -185,6 +185,12 @@ export interface IncomingBooking {
    * started the clock. Undefined only for bookings mapped from a context that never carries it
    * (e.g. ride history). */
   dispatchedAt?: string | null;
+  /** Server-authoritative remaining seconds before this driver's offer expires (20s round window). */
+  offerExpiresInSeconds?: number | null;
+  /** Active dispatch search round (1 = 500m, 2 = 1km, 3 = 2km). */
+  dispatchRound?: number;
+  /** Active search radius in meters (500, 1000, 2000). */
+  dispatchRadiusM?: number;
 }
 
 export interface RideHistoryItem {
@@ -236,13 +242,15 @@ export interface PendingAccountInfo {
   trackingMode: 'mobile_app' | 'iot_device';
   iotDeviceId?: string;
   personType: 'owner' | 'driver';
+  /** The account's sign-in email (login is email-only). */
+  email: string;
 }
 
 /** Read-only EXISTING personal information of one person associated with the franchise —
  * either the Tricycle Owner or the separate assigned Tricycle Driver — offered as a
  * selectable choice for who will use the Driver App. Comes back from verify-eligibility
- * straight off the franchise/application record, never collected from the user, never
- * editable, and deliberately WITHOUT an email address.
+ * straight off the franchise/application record, never collected from the user and never
+ * editable — except `email`, the sign-in email prefill the user confirms on that screen.
  *
  * `birthday` is the exact server-formatted display string and `date_of_birth` the exact
  * date-only YYYY-MM-DD value — both authoritative as recorded, so a birthday is never
@@ -259,6 +267,11 @@ export interface VerifiedPersonalInformation {
   date_of_birth?: string | null;
   mobile_number: string | null;
   barangay: string | null;
+  /** Email on file: the owner's existing account email, or the separate driver's
+   * registration email (a prefill they can correct). */
+  email?: string | null;
+  /** True when this person already has a Trivora account — its email is used as-is. */
+  email_locked?: boolean;
 }
 
 export interface VerifiedOperatorData {

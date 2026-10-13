@@ -38,6 +38,8 @@ export default function DriverManualRideScreen() {
 
 function ManualRideSetup() {
   const { close, quote: requestQuote, add, busy } = useManualRide();
+  // Pinned action bar clears the phone's bottom navigation (the app root only pads the top).
+  const insets = useSafeAreaInsets();
   const { session } = useQrSession();
   const { driver } = useDriverAuth();
   // Adding to a ride that is already boarding (QR and/or walk-in passengers waiting).
@@ -349,7 +351,7 @@ function ManualRideSetup() {
         ) : null}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + SPACING.md }]}>
         {addError ? <Text style={[styles.errorText, styles.footerError]}>{addError.message}</Text> : null}
         <View style={styles.footerRow}>
           <View style={styles.flex}>

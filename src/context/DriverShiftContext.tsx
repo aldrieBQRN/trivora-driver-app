@@ -147,6 +147,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   const lastSuccessfulTelemetryAtRef = useRef<number | null>(null);
   const wasNoSignalRef = useRef<boolean>(false);
   const autoOfflineTimeoutReachedRef = useRef<boolean>(false);
+  const pollPendingRequestsRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   // Guards the persistence effect below from overwriting before initialization
   const hasRestoredOnlineRef = useRef(false);
@@ -1071,14 +1072,17 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         setIncomingBooking((prev) => {
           if (prev) {
             // Already showing a specific request to the driver — only check whether THAT one is
-            // still present (still pending, still theirs to decide on). Never swap to a
-            // different pending request out from under them mid-decision.
-            const stillValid = list.some((b) => String(b.id) === String(prev.id));
-            if (!stillValid) {
+            const matching = list.find((b) => String(b.id) === String(prev.id));
+            if (!matching) {
               showToast('This ride request is no longer available.', 'info');
               return null;
             }
-            return prev;
+            return {
+              ...prev,
+              offerExpiresInSeconds: matching.offer_expires_in_seconds != null ? Number(matching.offer_expires_in_seconds) : prev.offerExpiresInSeconds,
+              dispatchRound: matching.dispatch_round != null ? Number(matching.dispatch_round) : prev.dispatchRound,
+              dispatchRadiusM: matching.dispatch_radius_m != null ? Number(matching.dispatch_radius_m) : prev.dispatchRadiusM,
+            };
           }
           // Nothing shown yet — surface the newest eligible request, same as before.
           return list.length > 0
@@ -1088,11 +1092,13 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       } catch {}
     };
 
+    pollPendingRequestsRef.current = poll;
     poll();
     const interval = setInterval(poll, PENDING_REQUEST_POLL_MS);
 
     return () => {
       cancelled = true;
+      pollPendingRequestsRef.current = async () => {};
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1195,6 +1201,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       if (err?.status === 409) {
         showToast('Another driver already accepted this request.', 'info');
         setIncomingBooking(null);
+        pollPendingRequestsRef.current().catch(() => {});
         return;
       }
       showToast(err?.message || 'Could not accept this ride. Please check your connection and try again.', 'info');
@@ -1211,6 +1218,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       driverApi.declineBooking(incomingBooking.id).catch(() => {});
     }
     setIncomingBooking(null);
+    pollPendingRequestsRef.current().catch(() => {});
   };
 
   // Server-authoritative, matching acceptBooking: wait for the backend to confirm the status
@@ -1300,12 +1308,20 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     setIsAvailableState(true);
   };
 
+  /** Saves the tracking source on the server; reverts and rethrows on failure so the caller
+   * never reports a save that didn't happen. */
   const updateTrackingMode = async (mode: 'mobile_app' | 'iot_device', iotId?: string) => {
+    const previousMode = trackingMode;
+    const previousIotId = iotDeviceId;
     setTrackingMode(mode);
     if (iotId) setIotDeviceId(iotId);
     try {
       await driverApi.setTrackingMode(mode, iotId);
-    } catch {}
+    } catch (err) {
+      setTrackingMode(previousMode);
+      setIotDeviceId(previousIotId);
+      throw err;
+    }
   };
 
   return (

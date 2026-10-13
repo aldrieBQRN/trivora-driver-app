@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, Users, WifiOff, CheckCircle2, Navigation, UserPlus, AlertCircle, Banknote, Smartphone, Clock, ChevronRight } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useQrSession } from '../context/QrSessionContext';
@@ -49,6 +50,9 @@ const sourceLabel = (p: QrSessionPassenger) => (p.source === 'walk_in' ? 'Walk-i
 export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenProps) {
   const { session, busy, startRide, dropOff, removePassenger, endRide, refresh, markPaid } = useQrSession();
   const { isOnline } = useDriverShift();
+  // The app root only pads the top, so this pinned action bar clears the phone's bottom
+  // navigation itself (same rule as Fare Collect).
+  const insets = useSafeAreaInsets();
   const { open: openAddWalkIn } = useManualRide();
   const [pending, setPending] = useState<PendingAction>(null);
   const [paymentTarget, setPaymentTarget] = useState<PassengerPaymentTarget | null>(null);
@@ -363,7 +367,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
         )}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + SPACING.md }]}>
         {isBoarding ? (
           <View style={styles.footerRow}>
             <View style={styles.flex}>

@@ -14,19 +14,20 @@ import RouteTimeline from '../components/RouteTimeline';
 import StatusBadge from '../components/StatusBadge';
 import AppBottomSheet from '../components/AppBottomSheet';
 import { useLiveRoute } from '../hooks/useLiveRoute';
+import type { IncomingBooking } from '../types';
 
-// Mirrors BookingDispatchService::OFFER_TIMEOUT_SECONDS on the backend — the backend, not this
-// value, is what actually expires an offer; keeping these in sync just avoids the driver's local
-// countdown reaching zero (and auto-declining) noticeably before or after the server's own clock.
-const OFFER_TIMEOUT_SECONDS = 25;
+// Mirrors BookingDispatchService::ROUND_TIMEOUT_SECONDS on the backend (20 seconds per search round) — the backend,
+// not this value, is what actually expires an offer; keeping these in sync avoids client/server clock divergence.
+const OFFER_TIMEOUT_SECONDS = 20;
 
-/** Derives the starting countdown from the backend's own dispatched_at timestamp rather than
- * always starting a fresh 25s on mount — so a slow render/navigation after the backend already
- * targeted this driver doesn't hand them extra time beyond what the server considers the offer
- * window, and a delayed mount doesn't undercount either. */
-function computeInitialCountdown(dispatchedAt?: string | null): number {
-  if (!dispatchedAt) return OFFER_TIMEOUT_SECONDS;
-  const elapsedSeconds = Math.floor((Date.now() - new Date(dispatchedAt).getTime()) / 1000);
+/** Derives the starting countdown from the backend's offerExpiresInSeconds or dispatchedAt timestamp rather than
+ * always starting a fresh 20s on mount — so the driver's display aligns with the server's authoritative offer window. */
+function computeInitialCountdown(incoming?: IncomingBooking | null): number {
+  if (incoming?.offerExpiresInSeconds != null) {
+    return Math.max(0, Math.min(OFFER_TIMEOUT_SECONDS, Math.round(incoming.offerExpiresInSeconds)));
+  }
+  if (!incoming?.dispatchedAt) return OFFER_TIMEOUT_SECONDS;
+  const elapsedSeconds = Math.floor((Date.now() - new Date(incoming.dispatchedAt).getTime()) / 1000);
   return Math.max(0, OFFER_TIMEOUT_SECONDS - elapsedSeconds);
 }
 // A single fixed point, not a draggable range — the panel no longer responds to swipe gestures
@@ -52,9 +53,13 @@ export default function DriverDispatchScreen() {
     retryLocation,
     headingDeg,
   } = useDriverShift();
-  const [countdown, setCountdown] = useState(() => computeInitialCountdown(incomingBooking?.dispatchedAt));
+  const [countdown, setCountdown] = useState(() => computeInitialCountdown(incomingBooking));
   const [isAccepting, setIsAccepting] = useState(false);
   const isCancelledRef = useRef(false);
+
+  useEffect(() => {
+    setCountdown(computeInitialCountdown(incomingBooking));
+  }, [incomingBooking?.id]);
   const sheetRef = useRef<BottomSheet>(null);
   const insets = useSafeAreaInsets();
   const [topOverlayHeight, setTopOverlayHeight] = useState(0);

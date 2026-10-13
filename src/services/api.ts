@@ -201,12 +201,34 @@ export const driverApi = {
     });
   },
 
-  /** Driver login — the person's EXISTING registered mobile number + password (email is no
-   * longer part of the login flow). */
-  login: async (mobile: string, password: string) => {
+  /** Driver login — email-only: the account's email + password. */
+  login: async (email: string, password: string) => {
     return request('/driver/login', {
       method: 'POST',
-      body: JSON.stringify({ login: mobile, password }),
+      body: JSON.stringify({ login: email, password }),
+    });
+  },
+
+  /** Forgot password: emails a 6-digit code to a registered address (422 with a message if the
+   * email isn't registered, has no deliverable address, or a code was sent under a minute ago). */
+  forgotPassword: async (email: string) => {
+    return request('/driver/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  verifyResetCode: async (email: string, otp: string) => {
+    return request('/driver/forgot-password/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
+    });
+  },
+
+  resetPassword: async (email: string, otp: string, password: string) => {
+    return request('/driver/forgot-password/reset', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp, password, password_confirmation: password }),
     });
   },
 
@@ -528,6 +550,9 @@ export function mapBookingRecordToIncoming(
     paidAt: raw.paid_at || null,
     passengerNotes: raw.passenger_notes || null,
     dispatchedAt: raw.dispatched_at || null,
+    offerExpiresInSeconds: raw.offer_expires_in_seconds != null ? Number(raw.offer_expires_in_seconds) : null,
+    dispatchRound: raw.dispatch_round != null ? Number(raw.dispatch_round) : undefined,
+    dispatchRadiusM: raw.dispatch_radius_m != null ? Number(raw.dispatch_radius_m) : undefined,
   };
 }
 

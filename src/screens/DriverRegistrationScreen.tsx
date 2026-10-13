@@ -11,11 +11,13 @@ import {
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { PendingAccountInfo } from '../types';
-import { CheckCircle2, ArrowLeft, Cpu, User, Calendar, Phone, MapPin } from 'lucide-react-native';
+import { CheckCircle2, ArrowLeft, Cpu, User, Calendar, Phone, MapPin, Mail } from 'lucide-react-native';
 import AuthProgressSteps from '../components/AuthProgressSteps';
 import FloatingIconButton from '../components/FloatingIconButton';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface DriverRegistrationScreenProps {
   onBack: () => void;
@@ -33,8 +35,10 @@ interface DriverRegistrationScreenProps {
  * will use this Driver App account. The chosen person is re-validated server-side at
  * registration, so the account can only ever belong to an actual owner/driver of this
  * franchise. Also shows the verified franchise/unit and the GPS tracking method choice.
- * No email, name, mobile number, or birthday is ever collected here: those details belong
- * to the existing person records and are confirmed, never re-entered.
+ * The only thing entered here is the account's sign-in EMAIL (login is email-only),
+ * prefilled from the record; name, mobile number, and birthday belong to the existing
+ * person records and are confirmed, never re-entered. An owner who already has a Trivora
+ * account keeps that account's email, shown read-only.
  * Password creation and the Terms & Privacy Policy agreement live on their own separate step
  * (DriverSetPasswordScreen).
  */
@@ -52,7 +56,14 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
     initialValues?.trackingMode ?? 'mobile_app'
   );
   const [iotDeviceId, setIotDeviceId] = useState(initialValues?.iotDeviceId ?? '');
-  const [errors, setErrors] = useState<{ personType?: string; iotDeviceId?: string }>({});
+  const emailOnFile = (type: 'owner' | 'driver' | null) =>
+    people.find((p) => p.type === type)?.email ?? '';
+  const [email, setEmail] = useState(initialValues?.email ?? emailOnFile(personType));
+  const [errors, setErrors] = useState<{ personType?: string; iotDeviceId?: string; email?: string }>({});
+
+  const selectedPerson = people.find((p) => p.type === personType);
+  // This person already has a Trivora account: it keeps its own email.
+  const emailLocked = !!selectedPerson?.email_locked;
 
   // Switching back to Mobile clears any typed device id so a stray value from a prior IoT
   // selection can never linger in state and get accidentally submitted.
@@ -65,8 +76,9 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
   };
 
   const handleSelectPerson = (type: 'owner' | 'driver') => {
+    if (type !== personType) setEmail(emailOnFile(type));
     setPersonType(type);
-    if (errors.personType) setErrors((e) => ({ ...e, personType: undefined }));
+    setErrors((e) => ({ ...e, personType: undefined, email: undefined }));
   };
 
   const handleNext = () => {
@@ -76,6 +88,11 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
     }
 
     const nextErrors: typeof errors = {};
+    const accountEmail = emailLocked ? selectedPerson?.email ?? '' : email.trim().toLowerCase();
+    if (!emailLocked) {
+      if (!accountEmail) nextErrors.email = 'Enter the email this person will sign in with.';
+      else if (!EMAIL_PATTERN.test(accountEmail)) nextErrors.email = 'Enter a valid email address (e.g. name@example.com).';
+    }
     if (trackingMode === 'iot_device' && !iotDeviceId.trim()) {
       nextErrors.iotDeviceId = 'Enter the IoT hardware device ID.';
     }
@@ -84,6 +101,7 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
 
     onNext({
       personType,
+      email: accountEmail,
       trackingMode,
       iotDeviceId: trackingMode === 'iot_device' ? iotDeviceId.trim() : undefined,
     });
@@ -150,7 +168,7 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
         {/* The franchise's registered people — READ-ONLY existing records offered as choices.
             The user picks which of them this Driver App account belongs to; no detail is ever
             typed, edited, or invented here, and registration re-validates the choice
-            server-side against this same franchise. Deliberately without email addresses. */}
+            server-side against this same franchise. The sign-in email is entered below. */}
         <Text style={styles.sectionTitle}>Who will use this Driver App?</Text>
         <Text style={styles.sectionSubtitle}>
           Choose one of the people registered to this franchise.
@@ -194,6 +212,42 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
         <Text style={styles.personCardNote}>
           These details come from your existing franchise record and cannot be edited here.
         </Text>
+
+        {/* Sign-in email for the selected person — login is email-only. */}
+        {personType &&
+          (emailLocked ? (
+            <View style={styles.lockedEmailBox}>
+              <Text style={styles.label}>Email Address</Text>
+              <View style={styles.lockedEmailRow}>
+                <Mail size={16} color={COLORS.primary} />
+                <Text style={styles.lockedEmailText} numberOfLines={1}>
+                  {selectedPerson?.email}
+                </Text>
+              </View>
+              <Text style={styles.personCardNote}>
+                This person already has a Trivora account. Sign in to the Driver App with this email.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.emailField}>
+              <FormField
+                label="Email Address"
+                icon={Mail}
+                placeholder="e.g. pedro@example.com"
+                value={email}
+                onChangeText={(v) => {
+                  setEmail(v);
+                  if (errors.email) setErrors((e) => ({ ...e, email: undefined }));
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                error={errors.email}
+              />
+              <Text style={styles.personCardNote}>
+                {selectedPerson?.role || 'This person'} will sign in to the Driver App with this email.
+              </Text>
+            </View>
+          ))}
 
         <Text style={styles.label}>GPS Telematics Tracking Method</Text>
         <View style={styles.trackingOptionsRow}>
@@ -377,6 +431,29 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.micro,
     color: COLORS.textMuted,
     marginTop: 6,
+  },
+  emailField: {
+    marginTop: SPACING.md,
+  },
+  lockedEmailBox: {
+    marginTop: SPACING.md,
+  },
+  lockedEmailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: COLORS.surfaceInput,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 14,
+  },
+  lockedEmailText: {
+    ...TYPOGRAPHY.body,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    flexShrink: 1,
   },
   label: {
     ...TYPOGRAPHY.caption,

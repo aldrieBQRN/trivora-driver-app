@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, BUTTONS, TYPOGRAPHY } from '../constants/theme';
 import { DriverProfile } from '../types';
 import { X, User, Mail, Phone } from 'lucide-react-native';
@@ -31,6 +32,8 @@ function digitsOnly(value: string): string {
  * they're intentionally left out of this form even though they're shown elsewhere on Profile.
  */
 export default function EditProfileModal({ visible, onClose, driver, onSave }: EditProfileModalProps) {
+  // Bottom sheet clears the phone's navigation bar (gesture or 3-button).
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
@@ -69,7 +72,7 @@ export default function EditProfileModal({ visible, onClose, driver, onSave }: E
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.contentCard}>
+        <View style={[styles.contentCard, { paddingBottom: Math.max(insets.bottom + SPACING.sm, Platform.OS === 'ios' ? 34 : 20) }]}>
           <View style={styles.header}>
             <Text style={styles.title}>Edit Profile</Text>
             <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>

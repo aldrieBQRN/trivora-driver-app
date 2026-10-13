@@ -34,6 +34,8 @@ export default function TelematicsSettingsScreen({ onBack }: TelematicsSettingsS
   const [selectedMode, setSelectedMode] = useState<'mobile_app' | 'iot_device'>(trackingMode);
   const [inputIotId, setInputIotId] = useState<string>(iotDeviceId);
   const [justSaved, setJustSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -45,11 +47,21 @@ export default function TelematicsSettingsScreen({ onBack }: TelematicsSettingsS
   const hasChanges =
     selectedMode !== trackingMode || (selectedMode === 'iot_device' && inputIotId.trim() !== iotDeviceId);
 
-  const handleSave = () => {
-    updateTrackingMode(selectedMode, inputIotId.trim());
-    setJustSaved(true);
-    if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
-    savedTimeoutRef.current = setTimeout(() => setJustSaved(false), 2500);
+  // "Saved" is only shown once the server has actually stored the new source.
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await updateTrackingMode(selectedMode, inputIotId.trim());
+      setJustSaved(true);
+      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+      savedTimeoutRef.current = setTimeout(() => setJustSaved(false), 2500);
+    } catch (err: any) {
+      setSaveError(err?.message || 'Could not save the tracking source. Please check your connection and try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -124,8 +136,10 @@ export default function TelematicsSettingsScreen({ onBack }: TelematicsSettingsS
           label={justSaved ? 'Saved' : 'Save Tracking Source'}
           icon={justSaved ? Check : undefined}
           onPress={handleSave}
-          disabled={!hasChanges && !justSaved}
+          loading={saving}
+          disabled={(!hasChanges && !justSaved) || saving}
         />
+        {saveError && <Text style={styles.saveError}>{saveError}</Text>}
         {justSaved && (
           <Text style={styles.savedHint}>
             {selectedMode === 'iot_device'
@@ -182,6 +196,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: COLORS.success,
+    textAlign: 'center',
+  },
+  saveError: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.dangerDark,
     textAlign: 'center',
   },
   sectionLabel: {

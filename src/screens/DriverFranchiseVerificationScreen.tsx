@@ -80,7 +80,7 @@ export default function DriverFranchiseVerificationScreen({
         <FormField
           label="Franchise Permit No."
           icon={CreditCard}
-          placeholder="e.g. FS-2026-00004"
+          placeholder="e.g. MTOP-2026-0001"
           value={franchiseNumber}
           onChangeText={setFranchiseNumber}
           autoCapitalize="characters"

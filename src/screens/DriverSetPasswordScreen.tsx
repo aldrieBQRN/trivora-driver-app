@@ -89,13 +89,14 @@ export default function DriverSetPasswordScreen({ onBack, accountInfo }: DriverS
     };
 
     try {
-      // Only verification fields + the new password — no name, email, mobile, or birthday:
-      // the backend independently re-verifies the franchise permit and validates that the
-      // selected person_type is one of THIS franchise's actual owner/driver records, then
+      // Only verification fields, the sign-in email and the new password — no name, mobile, or
+      // birthday: the backend independently re-verifies the franchise permit and validates that
+      // the selected person_type is one of THIS franchise's actual owner/driver records, then
       // links the account to that EXISTING person — so no duplicate is ever created.
       const res = await driverApi.register({
         franchise_number: verifiedFranchise?.franchise_number,
         person_type: accountInfo.personType,
+        email: accountInfo.email,
         verification_token: verifiedFranchise?.verification_token,
         password,
         confirm_password: confirmPassword,

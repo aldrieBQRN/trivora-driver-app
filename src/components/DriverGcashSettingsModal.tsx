@@ -12,6 +12,7 @@ import {
   Image,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { X, QrCode, Upload, Trash2, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
@@ -102,6 +103,8 @@ export default function DriverGcashSettingsModal({
   initialStatus,
   driverId,
 }: DriverGcashSettingsModalProps) {
+  // Bottom sheet clears the phone's navigation bar (gesture or 3-button).
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const cachedInitial = initialStatus || (driverId ? getCachedGcashStatus(driverId) : null);
   const [loading, setLoading] = useState(false);
@@ -256,7 +259,7 @@ export default function DriverGcashSettingsModal({
               <Text style={styles.loadingText}>Loading GCash settings…</Text>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+            <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom + SPACING.sm, SPACING.lg) }]}>
               <Text style={styles.instruction}>
                 Upload your personal GCash QR so passengers can pay you directly via GCash. If not configured, rides with you are Cash Only.
               </Text>

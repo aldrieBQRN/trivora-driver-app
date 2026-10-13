@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { X, Gauge, ShieldAlert, AlertOctagon, BellOff } from 'lucide-react-native';
@@ -24,6 +25,8 @@ interface NotificationsModalProps {
  * Notifications presentation, so the same feature opens the same way in both apps.
  */
 export default function NotificationsModal({ visible, onClose }: NotificationsModalProps) {
+  // Bottom sheet clears the phone's navigation bar (gesture or 3-button).
+  const insets = useSafeAreaInsets();
   const { violations, activeSpeedWarning, codingWarning } = useDriverShift();
   const pendingViolations = violations.filter((v) => v.status === 'pending');
   const hasLiveAlerts = activeSpeedWarning || !!codingWarning;
@@ -40,7 +43,7 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
             </TouchableOpacity>
           </View>
 
-          <ScrollView contentContainerStyle={styles.content}>
+          <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + SPACING.sm, Platform.OS === 'ios' ? 34 : SPACING.lg) }]}>
             {!hasAnything && (
               <EmptyState
                 icon={BellOff}
