@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -102,6 +103,8 @@ export async function prefetchDriverGcashQr(driverId?: number): Promise<DriverGc
 }
 
 export default function DriverGcashQrScreen({ onBack }: DriverGcashQrScreenProps) {
+  // Pushed page with the tab bar hidden: the last item must clear the phone's navigation bar.
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const { driver } = useDriverAuth();
   const driverId = driver?.id;
@@ -247,7 +250,7 @@ export default function DriverGcashQrScreen({ onBack }: DriverGcashQrScreenProps
       <ScreenHeader title="Driver GCash QR" onBack={onBack} />
 
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: SPACING.xxl + insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
         {loading ? (

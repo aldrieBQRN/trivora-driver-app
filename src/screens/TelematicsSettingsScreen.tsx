@@ -7,6 +7,7 @@ import {
   ScrollView,
   TextInput,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { Cpu, Smartphone, Radio, ShieldCheck, Check } from 'lucide-react-native';
@@ -19,6 +20,8 @@ interface TelematicsSettingsScreenProps {
 }
 
 export default function TelematicsSettingsScreen({ onBack }: TelematicsSettingsScreenProps) {
+  // Pushed page with the tab bar hidden: the last item must clear the phone's navigation bar.
+  const insets = useSafeAreaInsets();
   const {
     trackingMode,
     iotDeviceId,
@@ -68,7 +71,7 @@ export default function TelematicsSettingsScreen({ onBack }: TelematicsSettingsS
     <View style={styles.container}>
       <ScreenHeader title="Tracking Settings" onBack={onBack} />
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: 40 + insets.bottom }]}>
         <Text style={styles.sectionLabel}>SELECT ACTIVE TELEMETRY SOURCE</Text>
 
         {/* Mode 1: Mobile Phone GPS — tapping only stages the choice; it no longer saves. */}

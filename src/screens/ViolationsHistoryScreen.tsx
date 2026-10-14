@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
@@ -18,7 +18,13 @@ const FILTER_OPTIONS = [
   { key: 'Resolved', label: 'Resolved' },
 ];
 
-export default function ViolationsHistoryScreen() {
+interface ViolationsHistoryScreenProps {
+  /** Opens this violation's detail once it is in the list (a tapped violation notification). */
+  focusViolationId?: number | null;
+  onFocusHandled?: () => void;
+}
+
+export default function ViolationsHistoryScreen({ focusViolationId = null, onFocusHandled }: ViolationsHistoryScreenProps = {}) {
   const { violations, isLoadingViolations, violationsError, refreshViolations } = useDriverShift();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('All');
   // Holds only the id, not a snapshot of the violation itself — derived live from `violations`
@@ -27,6 +33,23 @@ export default function ViolationsHistoryScreen() {
   // looked like at the moment it was tapped.
   const [selectedViolationId, setSelectedViolationId] = useState<number | null>(null);
   const selectedViolation = violations.find((v) => v.id === selectedViolationId) ?? null;
+
+  useEffect(() => {
+    if (focusViolationId == null) return;
+    let cancelled = false;
+    (async () => {
+      // A brand-new violation may not be in the list yet — fetch once before giving up and just
+      // showing the list.
+      if (!violations.some((v) => v.id === focusViolationId)) await refreshViolations();
+      if (cancelled) return;
+      setSelectedViolationId(focusViolationId);
+      onFocusHandled?.();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusViolationId]);
 
   const filtered = violations.filter((v) => {
     if (activeFilter === 'All') return true;

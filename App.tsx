@@ -9,6 +9,8 @@ import { DriverShiftProvider, useDriverShift } from './src/context/DriverShiftCo
 import { QrSessionProvider, useQrSession } from './src/context/QrSessionContext';
 import { ManualRideProvider, useManualRide } from './src/context/ManualRideContext';
 import { NetworkProvider } from './src/context/NetworkContext';
+import { DriverNotificationsProvider, useDriverNotifications } from './src/context/DriverNotificationsContext';
+import NotificationsModal from './src/components/NotificationsModal';
 import { ToastProvider } from './src/components/Toast';
 import OfflineBanner from './src/components/OfflineBanner';
 import { COLORS } from './src/constants/theme';
@@ -61,6 +63,7 @@ function DriverAppNavigator() {
   const { session: qrSession } = useQrSession();
   // Manual Ride (walk-in passenger without the app): its screen opens from Home or on resume.
   const { isOpen: isManualRideVisible } = useManualRide();
+  const { isCenterOpen, openCenter, closeCenter, pendingTarget, clearPendingTarget } = useDriverNotifications();
   const insets = useSafeAreaInsets();
 
   // Walk-in (Scan to Ride) session screen: opens by itself when the first passenger joins; the
@@ -83,6 +86,8 @@ function DriverAppNavigator() {
   // Password" step — and kept here (rather than inside either screen) so navigating back from
   // Create Password to Account Info doesn't lose what was already entered.
   const [pendingAccountInfo, setPendingAccountInfo] = useState<PendingAccountInfo | null>(null);
+  // A tapped violation notification opens that violation's detail inside the Violations tab.
+  const [focusViolationId, setFocusViolationId] = useState<number | null>(null);
 
   // Track previous authentication state to detect logout vs initial load
   const wasAuthenticatedRef = useRef(false);
@@ -126,6 +131,28 @@ function DriverAppNavigator() {
   // previous session is still being restored, hold a blank frame in the splash's own background
   // colour so the handoff is seamless and a returning, already-logged-in driver never flashes
   // through onboarding on the way back in.
+  // Opening a notification (phone tray or the in-app list) goes to the screen it is about. An
+  // active ride/dispatch screen still takes precedence on screen (see renderCurrentScreen), and a
+  // ride request needs nothing extra: the pending-requests poll shows it if it is still offered.
+  useEffect(() => {
+    if (!pendingTarget || !isAuthenticated) return;
+    const { event, recordType, recordId } = pendingTarget;
+    clearPendingTarget();
+    setPushedScreen(null);
+
+    if (recordType === 'violation') {
+      setActiveTab('violations');
+      setFocusViolationId(recordId != null ? Number(recordId) : null);
+    } else if (recordType === 'booking' && (event === 'booking_completed' || event === 'booking_cancelled')) {
+      setActiveTab('trips');
+    } else if (recordType === 'fare_configuration') {
+      setActiveTab('home');
+      openCenter();
+    } else {
+      setActiveTab('home');
+    }
+  }, [pendingTarget, isAuthenticated]);
+
   if (isRestoring) {
     return (
       <View style={[styles.container, { backgroundColor: '#FFFFFF' }]}>
@@ -266,7 +293,12 @@ function DriverAppNavigator() {
     }
 
     if (activeTab === 'violations') {
-      return <ViolationsHistoryScreen />;
+      return (
+        <ViolationsHistoryScreen
+          focusViolationId={focusViolationId}
+          onFocusHandled={() => setFocusViolationId(null)}
+        />
+      );
     }
 
     if (activeTab === 'earnings') {
@@ -305,6 +337,7 @@ function DriverAppNavigator() {
         <StatusBar style="light" translucent backgroundColor="transparent" />
         <OfflineBanner />
         {renderCurrentScreen()}
+        <NotificationsModal visible={isAuthenticated && isCenterOpen} onClose={closeCenter} />
       </View>
     );
   }
@@ -328,6 +361,7 @@ function DriverAppNavigator() {
           />
         )}
       </View>
+      <NotificationsModal visible={isAuthenticated && isCenterOpen} onClose={closeCenter} />
     </SafeAreaView>
   );
 }
@@ -339,13 +373,15 @@ export default function App() {
         <NetworkProvider>
           <ToastProvider>
             <DriverAuthProvider>
-              <DriverShiftProvider>
-                <QrSessionProvider>
-                  <ManualRideProvider>
-                    <DriverAppNavigator />
-                  </ManualRideProvider>
-                </QrSessionProvider>
-              </DriverShiftProvider>
+              <DriverNotificationsProvider>
+                <DriverShiftProvider>
+                  <QrSessionProvider>
+                    <ManualRideProvider>
+                      <DriverAppNavigator />
+                    </ManualRideProvider>
+                  </QrSessionProvider>
+                </DriverShiftProvider>
+              </DriverNotificationsProvider>
             </DriverAuthProvider>
           </ToastProvider>
         </NetworkProvider>

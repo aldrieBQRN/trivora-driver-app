@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import { DriverProfile, IncomingBooking, ViolationCitation, QrSession, QrSessionPassenger, ManualRide, ManualRideQuote, DriverGcashQrStatus, PaymentStatus, DriverQrCodeData, NearbyPlace } from '../types';
+import { DriverProfile, IncomingBooking, ViolationCitation, QrSession, QrSessionPassenger, ManualRide, ManualRideQuote, DriverGcashQrStatus, PaymentStatus, DriverQrCodeData, NearbyPlace, AppNotificationItem } from '../types';
 
 function getDefaultApiBaseUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
@@ -287,6 +287,32 @@ export const driverApi = {
 
   logout: async () => {
     return request('/driver/logout', { method: 'POST' });
+  },
+
+  // In-app notifications (AppNotificationController) — always this account's own, for this app.
+  getNotifications: async (page = 1) => {
+    return request(`/driver/notifications?page=${page}`);
+  },
+
+  getUnreadNotificationCount: async (): Promise<{ unread_count: number }> => {
+    return request('/driver/notifications/unread-count');
+  },
+
+  markNotificationRead: async (id: string) => {
+    return request(`/driver/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
+  },
+
+  markAllNotificationsRead: async () => {
+    return request('/driver/notifications/read-all', { method: 'POST' });
+  },
+
+  /** Registers this device's Expo push token for the signed-in account (idempotent). The server
+   * removes it again when this session logs out. */
+  registerPushToken: async (token: string, platform: string) => {
+    return request('/driver/push-token', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform }),
+    });
   },
 
   // Appends to the tricycle_locations violation-detection log AND updates the driver's own
@@ -645,6 +671,32 @@ export function mapAuthResponseToDriverProfile(res: any, fallbackEmail?: string)
 /** Maps a raw violation record (from GET /driver/violations) into the app's ViolationCitation
  * shape — driver_status/driver_status_label/can_appeal are computed server-side (see
  * DriverViolationController::driverFacingStatus), this just converts snake_case to camelCase. */
+/** "Just now" / "5m ago" / "3h ago" / "2d ago" / "Oct 2" for a notification's timestamp. */
+export function notificationTimeLabel(iso: string | null): string {
+  if (!iso) return '';
+  const at = new Date(iso);
+  const seconds = Math.max(0, Math.floor((Date.now() - at.getTime()) / 1000));
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 7 * 86400) return `${Math.floor(seconds / 86400)}d ago`;
+  return at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+export function mapNotificationRecord(raw: any): AppNotificationItem {
+  return {
+    id: String(raw.id),
+    event: raw.event ?? null,
+    title: raw.title || '',
+    message: raw.message || '',
+    recordType: raw.record_type ?? null,
+    recordId: raw.record_id ?? null,
+    read: !!raw.read,
+    createdAt: raw.created_at ?? null,
+    time: notificationTimeLabel(raw.created_at ?? null),
+  };
+}
+
 export function mapViolationRecordToCitation(raw: any): ViolationCitation {
   const detectedAt = raw.detected_at ? new Date(raw.detected_at) : null;
   const isResolved = raw.driver_status === 'resolved';

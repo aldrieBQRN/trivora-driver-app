@@ -3,23 +3,47 @@ import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity, Platform }
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
-import { X, Gauge, ShieldAlert, AlertOctagon, BellOff } from 'lucide-react-native';
+import { useDriverNotifications } from '../context/DriverNotificationsContext';
+import {
+  X, Gauge, ShieldAlert, AlertOctagon, BellOff, BellRing, CarFront, CircleX, CircleCheck, Receipt, BadgeCheck,
+} from 'lucide-react-native';
 import EmptyState from './EmptyState';
 import StatusBadge from './StatusBadge';
+import { AppNotificationItem } from '../types';
 
 interface NotificationsModalProps {
   visible: boolean;
   onClose: () => void;
 }
 
+/** Icon + tone per backend event (App\Services\MobileNotifier). */
+function eventVisual(event: string | null) {
+  switch (event) {
+    case 'booking_request':
+      return { Icon: BellRing, color: COLORS.primary, bubble: styles.iconBubbleInfo };
+    case 'booking_assigned':
+      return { Icon: CarFront, color: COLORS.primary, bubble: styles.iconBubbleInfo };
+    case 'booking_completed':
+      return { Icon: CircleCheck, color: COLORS.success, bubble: styles.iconBubbleSuccess };
+    case 'booking_cancelled':
+      return { Icon: CircleX, color: COLORS.dangerDark, bubble: styles.iconBubbleDanger };
+    case 'fare_updated':
+      return { Icon: Receipt, color: COLORS.primary, bubble: styles.iconBubbleInfo };
+    case 'violation_appeal_approved':
+    case 'violation_settled':
+    case 'franchise_active':
+      return { Icon: BadgeCheck, color: COLORS.success, bubble: styles.iconBubbleSuccess };
+    default:
+      return { Icon: AlertOctagon, color: COLORS.dangerDark, bubble: styles.iconBubbleDanger };
+  }
+}
+
 /**
- * A real feed of what actually needs the driver's attention right now — live compliance
- * warnings plus unresolved citations — built from the same `violations`/`activeSpeedWarning`/
- * `codingWarning` state already tracked in DriverShiftContext. There's no separate backend
- * notification system in this app, so this deliberately doesn't invent one: it's a different
- * lens on real data, not a duplicate of the Violations tab (which is the full pending+resolved
- * history/management view) — and not exclusively about violations either, so this doesn't funnel
- * everything toward a single "view all violations" destination.
+ * The driver's notification center: live compliance warnings from DriverShiftContext (speeding,
+ * coding day), the persistent backend notifications (DriverNotificationsContext — ride requests,
+ * ride updates, violations, franchise status, fare changes; the same items that arrive as phone
+ * notifications), and still-unresolved citations. Tapping a notification marks it read and opens
+ * the screen it is about.
  *
  * A modal overlay rather than a pushed full screen — matches the Passenger app's own
  * Notifications presentation, so the same feature opens the same way in both apps.
@@ -28,19 +52,51 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
   // Bottom sheet clears the phone's navigation bar (gesture or 3-button).
   const insets = useSafeAreaInsets();
   const { violations, activeSpeedWarning, codingWarning } = useDriverShift();
+  const { notifications, unreadCount, markAllRead, openNotification } = useDriverNotifications();
   const pendingViolations = violations.filter((v) => v.status === 'pending');
   const hasLiveAlerts = activeSpeedWarning || !!codingWarning;
-  const hasAnything = hasLiveAlerts || pendingViolations.length > 0;
+  const hasAnything = hasLiveAlerts || pendingViolations.length > 0 || notifications.length > 0;
+
+  const renderNotification = (item: AppNotificationItem) => {
+    const { Icon, color, bubble } = eventVisual(item.event);
+    return (
+      <TouchableOpacity key={item.id} style={styles.row} onPress={() => openNotification(item)} activeOpacity={0.7}>
+        <View style={[styles.iconBubble, bubble]}>
+          <Icon size={17} color={color} />
+        </View>
+        <View style={styles.rowBody}>
+          <View style={styles.rowHeader}>
+            <Text style={[styles.rowTitle, item.read && styles.rowTitleRead]} numberOfLines={1}>{item.title}</Text>
+            <View style={styles.metaRight}>
+              {!item.read && <View style={styles.unreadDot} />}
+              <Text style={styles.rowDate}>{item.time}</Text>
+            </View>
+          </View>
+          <Text style={styles.rowDesc}>{item.message}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}>
-            <Text style={styles.title}>Notifications</Text>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
-              <X size={20} color={COLORS.textPrimary} />
-            </TouchableOpacity>
+            <View>
+              <Text style={styles.title}>Notifications</Text>
+              {unreadCount > 0 && <Text style={styles.unreadLabel}>{unreadCount} unread</Text>}
+            </View>
+            <View style={styles.headerActions}>
+              {unreadCount > 0 && (
+                <TouchableOpacity onPress={markAllRead} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.markAllText}>Mark all read</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.closeButton} onPress={onClose} activeOpacity={0.7}>
+                <X size={20} color={COLORS.textPrimary} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom + SPACING.sm, Platform.OS === 'ios' ? 34 : SPACING.lg) }]}>
@@ -106,6 +162,13 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
               </View>
             )}
 
+            {notifications.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionLabel}>RECENT</Text>
+                {notifications.map(renderNotification)}
+              </View>
+            )}
+
             {pendingViolations.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>PENDING VIOLATIONS</Text>
@@ -161,6 +224,20 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.h3,
     color: COLORS.textPrimary,
   },
+  unreadLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  markAllText: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
   closeButton: {
     width: 32,
     height: 32,
@@ -200,6 +277,26 @@ const styles = StyleSheet.create({
   },
   iconBubbleWarning: {
     backgroundColor: COLORS.amberLight,
+  },
+  iconBubbleInfo: {
+    backgroundColor: COLORS.backgroundSubtle,
+  },
+  iconBubbleSuccess: {
+    backgroundColor: COLORS.successLight,
+  },
+  metaRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary,
+  },
+  rowTitleRead: {
+    fontWeight: '500',
   },
   rowBody: {
     flex: 1,

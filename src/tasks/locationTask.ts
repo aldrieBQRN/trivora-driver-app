@@ -58,6 +58,10 @@ export const TRACKING_MODE_STORAGE_KEY = '@trivora_tracking_mode';
 // double-checks for an orphaned task on its own startup, in case the driver reopens the app
 // before that next tick fires.
 export const IS_ONLINE_STORAGE_KEY = '@trivora_is_online';
+// Mirrors DriverShiftContext's `hasActiveTrip`: a booked ride in progress keeps tracking authorized
+// even while the driver is Offline (e.g. after an app restart mid-ride), so the orphan check below
+// must not stop the task during a trip.
+export const ACTIVE_TRIP_STORAGE_KEY = '@trivora_active_trip';
 const PENDING_PING_STORAGE_KEY = '@trivora_bg_pending_ping';
 // THE shared cadence stamp — written by whichever side wins a transmit slot (this task when the
 // app is backgrounded, DriverShiftContext's claimTransmitSlot() when it is foregrounded) and read
@@ -119,8 +123,9 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
     // this key at all is presumably still in its very first online session), so this only ever
     // stops the task on an EXPLICIT persisted 'false'.
     const isOnline = (await AsyncStorage.getItem(IS_ONLINE_STORAGE_KEY)) !== 'false';
-    if (!isOnline) {
-      if (__DEV__) console.warn('[telemetry:bg] Orphaned background task detected (driver is offline) — stopping self.');
+    const hasActiveTrip = (await AsyncStorage.getItem(ACTIVE_TRIP_STORAGE_KEY)) === 'true';
+    if (!isOnline && !hasActiveTrip) {
+      if (__DEV__) console.warn('[telemetry:bg] Orphaned background task detected (driver is offline, no active trip) — stopping self.');
       await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
       return;
     }

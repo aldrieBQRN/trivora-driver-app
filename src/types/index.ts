@@ -114,6 +114,20 @@ export interface ViolationAppeal {
   reviewNotes: string | null;
 }
 
+/** One persistent in-app notification from the backend (AppNotificationController). */
+export interface AppNotificationItem {
+  id: string;
+  event: string | null;
+  title: string;
+  message: string;
+  recordType: string | null;
+  recordId: number | string | null;
+  read: boolean;
+  createdAt: string | null;
+  /** Relative label ("5m ago") computed when the list was fetched. */
+  time: string;
+}
+
 export interface ViolationCitation {
   id: number;
   citationNo: string;

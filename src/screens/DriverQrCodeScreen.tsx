@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { DriverQrCodeData } from '../types';
@@ -59,6 +60,8 @@ export function prefetchDriverQrCode(driverId?: number): void {
 }
 
 export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) {
+  // Pushed page with the tab bar hidden: the last item must clear the phone's navigation bar.
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const { driver, refreshProfile } = useDriverAuth();
 
@@ -247,7 +250,7 @@ export default function DriverQrCodeScreen({ onBack }: DriverQrCodeScreenProps) 
     <View style={styles.container}>
       <ScreenHeader title="Assigned QR Code" onBack={onBack} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: SPACING.xxl + insets.bottom }]} showsVerticalScrollIndicator={false}>
         {loading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator size="large" color={COLORS.primary} />

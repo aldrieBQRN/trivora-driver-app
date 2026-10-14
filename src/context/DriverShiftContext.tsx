@@ -27,12 +27,14 @@ import {
   LOCATION_EVENT_NAME,
   TRACKING_MODE_STORAGE_KEY,
   IS_ONLINE_STORAGE_KEY,
+  ACTIVE_TRIP_STORAGE_KEY,
   SESSION_STORAGE_KEY,
   LAST_SENT_AT_STORAGE_KEY,
   GPS_TRANSMITTER_STORAGE_KEY,
   GPS_FIX_DELIVERY_INTERVAL_MS,
   GpsTransmitter,
 } from '../tasks/locationTask';
+import { dismissStaleBookingRequests } from '../services/pushNotifications';
 
 const ACTIVE_RIDE_STATUSES = ['accepted', 'arrived', 'in_transit'] as const;
 // Background DATA refresh cadence — pending dispatch and ride history are live server state the
@@ -263,6 +265,17 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   const [incomingBooking, setIncomingBooking] = useState<IncomingBooking | null>(null);
   const [activeBooking, setActiveBooking] = useState<IncomingBooking | null>(null);
   const [rideState, setRideState] = useState<'idle' | 'dispatch' | 'accepted' | 'arrived' | 'in_transit' | 'fare_collect'>('idle');
+  // A booked ride the driver is carrying out right now. GPS keeps being tracked (including in the
+  // background) for the whole trip even if the driver is Offline — e.g. after an app restart
+  // mid-ride, which always starts Offline but restores the active ride — so the passenger's live
+  // map and the backend's stale-GPS checks never go blind mid-trip.
+  const hasActiveTrip =
+    !!activeBooking && (rideState === 'accepted' || rideState === 'arrived' || rideState === 'in_transit');
+  const shouldTrackGps = isOnline || hasActiveTrip;
+  // Mirrored for the background location task, which cannot read this state (see locationTask.ts).
+  useEffect(() => {
+    AsyncStorage.setItem(ACTIVE_TRIP_STORAGE_KEY, String(hasActiveTrip)).catch(() => {});
+  }, [hasActiveTrip]);
   const [fareToCollect, setFareToCollect] = useState<number | null>(null);
 
   // Starts empty and is filled from the driver's real booking history — never placeholder rides
@@ -619,7 +632,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         // ACCESS_BACKGROUND_LOCATION) and the Expo config plugin enables the service.
         foregroundService: {
           notificationTitle: 'Trivora Driver',
-          notificationBody: 'Sending GPS for your active shift',
+          notificationBody: 'Sending GPS while you are on shift or on a trip',
           notificationColor: '#182B62',
         },
       });
@@ -665,8 +678,9 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     // Also gated on `driver`, not just `isOnline` — DriverShiftProvider wraps the whole app
     // including the pre-login screens, and `isOnline` already defaults to true, so without this
     // the watcher would start (and call sendTelematics with no auth token yet, producing 401s)
-    // before the driver has even logged in.
-    if (!isOnline || !driver) return;
+    // before the driver has even logged in. Runs while Online or while carrying out an active
+    // trip (shouldTrackGps).
+    if (!shouldTrackGps || !driver) return;
     let cancelled = false;
     let activePollTimer: ReturnType<typeof setInterval> | null = null;
     let bgEventSubscription: { remove: () => void } | null = null;
@@ -848,7 +862,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       setTransmitter('none');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnline, trackingMode, driver?.id]);
+  }, [shouldTrackGps, trackingMode, driver?.id]);
 
   // Defensive fallback for when foreground/background delivery was starved — OEM battery
   // optimizers (Xiaomi/Huawei/Samsung's aggressive background-kill policies) or a driver who only
@@ -858,7 +872,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   // it goes through the same slot gate, so it can never write a duplicate record next to a
   // transmission that just went out.
   useEffect(() => {
-    if (!isOnline || !driver) return;
+    if (!shouldTrackGps || !driver) return;
 
     const handleAppStateChange = async (nextState: AppStateStatus) => {
       if (nextState === 'background' || nextState === 'inactive') {
@@ -916,7 +930,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOnline, driver?.id, trackingMode]);
+  }, [shouldTrackGps, driver?.id, trackingMode]);
 
   // Restore an in-progress ride (or a pending request already waiting) and pull real trip
   // history from the backend as soon as the driver is known. Falls back to the local demo
@@ -1059,7 +1073,11 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const canReceiveRequests = isOnline && isAvailable && rideState === 'idle' && !activeBooking && !!driver;
 
-    if (!canReceiveRequests || !driver) return;
+    if (!canReceiveRequests || !driver) {
+      // Offline, busy or signed out: no ride request in the phone's tray can be acted on.
+      dismissStaleBookingRequests([]);
+      return;
+    }
 
     let cancelled = false;
 
@@ -1068,6 +1086,9 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         const res = await driverApi.getPendingRequests(driver.id);
         if (cancelled) return;
         const list: any[] = res?.requests || [];
+        // The backend list is authoritative: any ride-request notification still in the tray for
+        // a booking no longer offered here (taken by another driver, expired, cancelled) goes.
+        dismissStaleBookingRequests(list.map((b) => b.id));
 
         setIncomingBooking((prev) => {
           if (prev) {

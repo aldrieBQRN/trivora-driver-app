@@ -501,7 +501,14 @@ export default function TrivoraDriverMapNative({
         </TouchableOpacity>
       )}
       {showCompass && target && (
-        <TouchableOpacity style={styles.compassButton} onPress={handleRecenter} activeOpacity={0.8}>
+        // Same spot as the Focus button (right edge, just above the bottom panel) — at the top-right
+        // it sat under the overlay header / route card on the ride screens.
+        <TouchableOpacity
+          style={[styles.compassButton, { bottom: bottomInset + 12 }]}
+          onPress={handleRecenter}
+          activeOpacity={0.8}
+          accessibilityLabel="Recenter map"
+        >
           <Compass size={18} color="#D97706" />
         </TouchableOpacity>
       )}
@@ -542,7 +549,6 @@ const styles = StyleSheet.create({
   },
   compassButton: {
     position: 'absolute',
-    top: 16,
     right: 16,
     width: 36,
     height: 36,

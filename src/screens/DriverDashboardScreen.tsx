@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useDriverShift } from '../context/DriverShiftContext';
+import { useDriverNotifications } from '../context/DriverNotificationsContext';
 import { Star, Bell, Satellite, Gauge, ShieldAlert, AlertOctagon, ChevronRight, ShieldOff, Ban, Users, Plus, Navigation, MapPin, Wallet, CheckCircle2, Power, PowerOff } from 'lucide-react-native';
 import { useQrSession } from '../context/QrSessionContext';
 import { useManualRide } from '../context/ManualRideContext';
@@ -13,7 +14,6 @@ import ScreenHeader from '../components/ScreenHeader';
 import Button from '../components/Button';
 import FloatingIconButton from '../components/FloatingIconButton';
 import Avatar from '../components/Avatar';
-import NotificationsModal from '../components/NotificationsModal';
 import { reverseGeocodePoint } from '../services/routingService';
 import { haversineKm } from '../utils/geo';
 
@@ -106,7 +106,9 @@ export default function DriverDashboardScreen({
     telemetryStatus,
   } = useDriverShift();
   const insets = useSafeAreaInsets();
-  const [showNotifications, setShowNotifications] = useState(false);
+  // The notification center itself is rendered app-wide (App.tsx) so a tapped phone notification
+  // can open it from any screen; the bell only opens it.
+  const { unreadCount, openCenter } = useDriverNotifications();
 
   // Panel eases up into place when Home opens (transform only, so its measured height is unchanged).
   const enter = useRef(new Animated.Value(0)).current;
@@ -132,7 +134,7 @@ export default function DriverDashboardScreen({
   const isNarrow = windowWidth < NARROW_WIDTH;
 
   const hasPendingViolation = violations.some((v) => v.status === 'pending');
-  const hasUnread = hasPendingViolation || activeSpeedWarning || !!codingWarning;
+  const hasUnread = unreadCount > 0 || hasPendingViolation || activeSpeedWarning || !!codingWarning;
   const hasComplianceWarning = isOnline && (activeSpeedWarning || !!codingWarning);
   const firstName = (driver?.name || 'Juan Dela Cruz').split(' ')[0];
   const hour = new Date().getHours();
@@ -234,7 +236,7 @@ export default function DriverDashboardScreen({
         }
         rightSlot={
           <FloatingIconButton
-            onPress={() => setShowNotifications(true)}
+            onPress={openCenter}
             hasBadge={hasUnread}
             accessibilityLabel="Notifications"
             size={40}
@@ -500,7 +502,6 @@ export default function DriverDashboardScreen({
         </View>
       </Animated.View>
 
-      <NotificationsModal visible={showNotifications} onClose={() => setShowNotifications(false)} />
     </View>
   );
 }

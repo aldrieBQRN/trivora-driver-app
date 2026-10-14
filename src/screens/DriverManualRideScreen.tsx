@@ -68,6 +68,27 @@ function ManualRideSetup() {
   );
   const requestIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Set once a server quote has reported the seats — from then on that is the authority.
+  const quoteLandedRef = useRef(false);
+
+  // The cached profile's capacity can be stale or missing (it is only refreshed on login), and with
+  // no bound the stepper could exceed the tricycle's capacity before a destination is picked. Read
+  // the tricycle's current capacity once — the same value the server checks every quote against.
+  useEffect(() => {
+    if (joiningSession) return;
+    let cancelled = false;
+    driverApi
+      .getDriverQrCode()
+      .then((res) => {
+        if (cancelled || quoteLandedRef.current || res?.passenger_capacity == null) return;
+        setSeatsLeft(res.passenger_capacity);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // A quote is only a confirmed fare when it was produced for the destination and party size now on
   // screen; any value we still hold is shown as a labelled estimate and cannot be added.
@@ -112,6 +133,7 @@ function ManualRideSetup() {
       }, { signal: controller.signal });
       if (requestId !== requestIdRef.current) return;
       setQuote(q);
+      quoteLandedRef.current = true;
       setSeatsLeft(q.seats_remaining ?? q.passenger_capacity);
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) return;
@@ -148,7 +170,9 @@ function ManualRideSetup() {
   }, [seatsLeft, partySize]);
 
   const maxParty = seatsLeft ?? null;
-  const canIncrease = maxParty == null || partySize < maxParty;
+  // Unknown capacity never means "unlimited": the server refuses Manual Rides for a tricycle whose
+  // capacity isn't configured, so the count stays at 1 until a capacity is known.
+  const canIncrease = maxParty != null && partySize < maxParty;
   const hasName = passengerName.trim().length > 0;
 
   const handleAdd = async () => {
