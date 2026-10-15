@@ -186,7 +186,9 @@ export default function DriverDispatchScreen() {
             <Avatar name={booking.passengerName} imageUri={booking.passengerAvatarUrl} size={44} tone="driver" />
             <View style={styles.passengerCol}>
               <Text style={styles.passengerName}>{booking.passengerName}</Text>
-              <Text style={styles.passengerMeta}>{booking.passengerTrips ?? 0} Completed Rides</Text>
+              <Text style={styles.passengerMeta}>
+                {booking.passengerCount} Passenger{booking.passengerCount !== 1 ? 's' : ''}
+              </Text>
             </View>
             <StatusBadge label={(booking.paymentMethod || 'cash').toUpperCase()} tone="brand" size="sm" />
           </View>
@@ -283,7 +285,7 @@ const styles = StyleSheet.create({
   },
   sheetContent: {
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xs,
+    paddingTop: SPACING.lg,
     gap: SPACING.md,
   },
   passengerRow: {

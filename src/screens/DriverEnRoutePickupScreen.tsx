@@ -1,7 +1,5 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, LayoutChangeEvent } from 'react-native';
-import { BottomSheetView } from '@gorhom/bottom-sheet';
-import type BottomSheet from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
@@ -13,11 +11,12 @@ import Avatar from '../components/Avatar';
 import RouteTimeline from '../components/RouteTimeline';
 import Button from '../components/Button';
 import RideStatusPill from '../components/RideStatusPill';
-import AppBottomSheet from '../components/AppBottomSheet';
+import StaticBottomPanel from '../components/StaticBottomPanel';
 import ConfirmModal from '../components/ConfirmModal';
 import { useLiveRoute } from '../hooks/useLiveRoute';
 import { useToast } from '../components/Toast';
 import { callPhoneNumber, messagePhoneNumber } from '../utils/deviceContact';
+import { formatPickupDistance } from '../utils/geo';
 
 export default function DriverEnRoutePickupScreen() {
   const {
@@ -33,7 +32,6 @@ export default function DriverEnRoutePickupScreen() {
     retryLocation,
     headingDeg,
   } = useDriverShift();
-  const sheetRef = useRef<BottomSheet>(null);
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -138,87 +136,87 @@ export default function DriverEnRoutePickupScreen() {
         />
       </View>
 
-      <AppBottomSheet ref={sheetRef} enableDynamicSizing index={0} animateOnMount={false}>
-        <BottomSheetView
-          style={[styles.sheetContent, { paddingBottom: insets.bottom + SPACING.md }]}
-          onLayout={handleSheetLayout}
-        >
-          <View style={styles.passengerRow}>
-            <Avatar name={booking.passengerName} imageUri={booking.passengerAvatarUrl} size={42} tone="driver" />
-            <View style={styles.passengerCol}>
-              <Text style={styles.passengerName}>{booking.passengerName}</Text>
-              <Text style={styles.passengerMeta}>{booking.passengerTrips ?? 0} Completed Rides</Text>
-            </View>
+      <StaticBottomPanel
+        style={[styles.sheetContent, { paddingBottom: insets.bottom + SPACING.md }]}
+        onLayout={handleSheetLayout}
+      >
+        <View style={styles.passengerRow}>
+          <Avatar name={booking.passengerName} imageUri={booking.passengerAvatarUrl} size={42} tone="driver" />
+          <View style={styles.passengerCol}>
+            <Text style={styles.passengerName}>{booking.passengerName}</Text>
+            <Text style={styles.passengerMeta}>
+              {booking.passengerCount} Passenger{booking.passengerCount !== 1 ? 's' : ''}
+            </Text>
           </View>
+        </View>
 
-          <RouteTimeline
-            pickup={{
-              label: 'Pick-up',
-              address: booking.pickup,
-              meta: [
-                booking.pickupDistanceKm != null ? `${booking.pickupDistanceKm} km` : null,
-                booking.pickupEtaMinutes != null ? `${booking.pickupEtaMinutes} min` : null,
-              ].filter(Boolean).join(' · ') || undefined,
-            }}
-          />
+        <RouteTimeline
+          pickup={{
+            label: 'Pick-up',
+            address: booking.pickup,
+            meta: [
+              booking.pickupDistanceKm != null ? formatPickupDistance(booking.pickupDistanceKm) : null,
+              booking.pickupEtaMinutes != null ? `${booking.pickupEtaMinutes} min` : null,
+            ].filter(Boolean).join(' · ') || undefined,
+          }}
+        />
 
-          {!!booking.passengerNotes && (
-            <View style={styles.noteRow}>
-              <MessageSquare size={15} color={COLORS.textSecondary} />
-              <Text style={styles.noteText} numberOfLines={2}>{booking.passengerNotes}</Text>
+        {!!booking.passengerNotes && (
+          <View style={styles.noteRow}>
+            <MessageSquare size={15} color={COLORS.textSecondary} />
+            <Text style={styles.noteText} numberOfLines={2}>{booking.passengerNotes}</Text>
+          </View>
+        )}
+
+        {/* Contact + cancel actions as labeled icon+label items, matching the Passenger app's
+            DriverEnRouteScreen convention exactly — Call, Message, and (while still on the way
+            to pickup) Cancel together in one row, not a separately-styled cancellation UI.
+            Cancel is only available during pickup/en-route — once "Arrived" is tapped, rideState
+            flips and it disappears immediately from this same row (the backend also rejects a
+            cancel attempt past this point, see BookingController::updateStatus). */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[styles.actionItem, !hasPassengerPhone && styles.actionItemDisabled]}
+            onPress={handleCall}
+            activeOpacity={0.7}
+            disabled={!hasPassengerPhone}
+          >
+            <View style={styles.actionIconBox}>
+              <Phone size={18} color={COLORS.primary} />
             </View>
+            <Text style={styles.actionLabel}>Call</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionItem, !hasPassengerPhone && styles.actionItemDisabled]}
+            onPress={handleMessage}
+            activeOpacity={0.7}
+            disabled={!hasPassengerPhone}
+          >
+            <View style={styles.actionIconBox}>
+              <MessageSquare size={18} color={COLORS.primary} />
+            </View>
+            <Text style={styles.actionLabel}>Message</Text>
+          </TouchableOpacity>
+
+          {!hasArrived && (
+            <TouchableOpacity style={styles.actionItem} onPress={() => setShowCancelConfirm(true)} activeOpacity={0.7}>
+              <View style={[styles.actionIconBox, { backgroundColor: COLORS.dangerLight }]}>
+                <X size={18} color={COLORS.danger} />
+              </View>
+              <Text style={[styles.actionLabel, { color: COLORS.danger }]}>Cancel</Text>
+            </TouchableOpacity>
           )}
+        </View>
 
-          {/* Contact + cancel actions as labeled icon+label items, matching the Passenger app's
-              DriverEnRouteScreen convention exactly — Call, Message, and (while still on the way
-              to pickup) Cancel together in one row, not a separately-styled cancellation UI.
-              Cancel is only available during pickup/en-route — once "Arrived" is tapped, rideState
-              flips and it disappears immediately from this same row (the backend also rejects a
-              cancel attempt past this point, see BookingController::updateStatus). */}
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={[styles.actionItem, !hasPassengerPhone && styles.actionItemDisabled]}
-              onPress={handleCall}
-              activeOpacity={0.7}
-              disabled={!hasPassengerPhone}
-            >
-              <View style={styles.actionIconBox}>
-                <Phone size={18} color={COLORS.primary} />
-              </View>
-              <Text style={styles.actionLabel}>Call</Text>
-            </TouchableOpacity>
+        <RideProgressStepper currentStep={hasArrived ? 'arrived' : 'to_pickup'} />
 
-            <TouchableOpacity
-              style={[styles.actionItem, !hasPassengerPhone && styles.actionItemDisabled]}
-              onPress={handleMessage}
-              activeOpacity={0.7}
-              disabled={!hasPassengerPhone}
-            >
-              <View style={styles.actionIconBox}>
-                <MessageSquare size={18} color={COLORS.primary} />
-              </View>
-              <Text style={styles.actionLabel}>Message</Text>
-            </TouchableOpacity>
-
-            {!hasArrived && (
-              <TouchableOpacity style={styles.actionItem} onPress={() => setShowCancelConfirm(true)} activeOpacity={0.7}>
-                <View style={[styles.actionIconBox, { backgroundColor: COLORS.dangerLight }]}>
-                  <X size={18} color={COLORS.danger} />
-                </View>
-                <Text style={[styles.actionLabel, { color: COLORS.danger }]}>Cancel</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <RideProgressStepper currentStep={hasArrived ? 'arrived' : 'to_pickup'} />
-
-          <Button
-            label={hasArrived ? 'Start Ride' : 'I Have Arrived'}
-            onPress={handlePrimaryAction}
-            loading={isAdvancing}
-          />
-        </BottomSheetView>
-      </AppBottomSheet>
+        <Button
+          label={hasArrived ? 'Start Ride' : 'I Have Arrived'}
+          onPress={handlePrimaryAction}
+          loading={isAdvancing}
+        />
+      </StaticBottomPanel>
 
       <ConfirmModal
         visible={showCancelConfirm}
@@ -248,7 +246,7 @@ const styles = StyleSheet.create({
   },
   sheetContent: {
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xs,
+    paddingTop: SPACING.lg,
     gap: SPACING.md,
   },
   passengerRow: {

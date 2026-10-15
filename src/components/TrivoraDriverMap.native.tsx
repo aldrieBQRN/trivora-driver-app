@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Image, StyleSheet } from 'react-native';
 import {
   Map,
   Camera,
@@ -10,14 +10,14 @@ import {
   type LngLatBounds,
   type StyleSpecification,
 } from '@maplibre/maplibre-react-native';
-import { Compass, LocateFixed } from 'lucide-react-native';
 
 const PICKUP_PIN_IMAGE = require('../../assets/map/pin-pickup.png');
 const DESTINATION_PIN_IMAGE = require('../../assets/map/pin-destination.png');
 const TRICYCLE_MARKER_IMAGE = require('../../assets/images/tricycle-marker.webp');
-import { COLORS, SHADOWS } from '../constants/theme';
+import { COLORS } from '../constants/theme';
 import { TrivoraDriverMapProps } from './TrivoraDriverMap.types';
 import { haversineKm } from '../utils/geo';
+import MapFocusButton from './MapFocusButton';
 
 /** The driver must move this far from where the camera was last framed before we re-fit while
  * following a pickup/drop-off target — keeps the destination in view as the driver approaches
@@ -491,26 +491,16 @@ export default function TrivoraDriverMapNative({
       {(focusCurrentLocation || (showCompass && !target)) && (
         // Home: Focus Current Location, placed just above the bottom sheet (the top-right spot
         // sits under Home's floating header). Filled = following, outlined = paused by a pan.
-        <TouchableOpacity
-          style={[styles.focusButton, { bottom: bottomInset + 12 }, isFollowing && styles.focusButtonActive]}
+        <MapFocusButton
+          style={{ bottom: bottomInset + 12 }}
           onPress={handleRecenter}
-          activeOpacity={0.8}
           accessibilityLabel="Focus current location"
-        >
-          <LocateFixed size={18} color={isFollowing ? '#FFFFFF' : COLORS.primary} />
-        </TouchableOpacity>
+        />
       )}
       {showCompass && target && (
         // Same spot as the Focus button (right edge, just above the bottom panel) — at the top-right
         // it sat under the overlay header / route card on the ride screens.
-        <TouchableOpacity
-          style={[styles.compassButton, { bottom: bottomInset + 12 }]}
-          onPress={handleRecenter}
-          activeOpacity={0.8}
-          accessibilityLabel="Recenter map"
-        >
-          <Compass size={18} color="#D97706" />
-        </TouchableOpacity>
+        <MapFocusButton style={{ bottom: bottomInset + 12 }} onPress={handleRecenter} />
       )}
     </View>
   );
@@ -529,35 +519,5 @@ const styles = StyleSheet.create({
   },
   markerOffline: {
     opacity: 0.55,
-  },
-  focusButton: {
-    position: 'absolute',
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.97)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    ...SHADOWS.sm,
-  },
-  focusButtonActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  compassButton: {
-    position: 'absolute',
-    right: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E8DEC8',
-    ...SHADOWS.sm,
   },
 });

@@ -180,10 +180,13 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     stopBackgroundUpdates();
   }, [driver]);
 
-  // Startup safety check: App always starts Offline. If a previous killed session left
-  // an OS-level background task running, reconcile and stop it here.
+  // Startup safety check: App always starts Offline locally. If a previous killed session left
+  // an OS-level background task running, reconcile and stop it here. An online shift that is
+  // still within the 10-minute telemetry window is resumed afterwards (see the driver-sync effect),
+  // which waits on this promise so the stop can never land after tracking restarts.
+  const startupResetRef = useRef<Promise<void>>(Promise.resolve());
   useEffect(() => {
-    (async () => {
+    startupResetRef.current = (async () => {
       setIsOnlineState(false);
       setIsAvailableState(false);
       setTelemetryStatus('offline');
@@ -939,18 +942,30 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     if (!driver) return;
     let cancelled = false;
 
-    // Push the client's current online/available state to the backend so the dispatch
-    // gate (which reads driver.is_online / is_available) matches what the app displays
-    // from the very first screen after login, instead of whatever was last saved. If TMO has
-    // suspended/revoked this driver since the local "online" flag was last persisted, the
-    // backend rejects this and the local state must fall back to offline instead of showing
-    // "Online" for a session the server never actually accepted.
-    driverApi.updateOnlineStatus(isOnline, isAvailable).catch(() => {
-      setIsOnlineState(false);
-      setIsAvailableState(false);
-    });
-
     (async () => {
+      // Resume an online shift instead of ending it. This used to push the app's startup default
+      // (Offline) to the backend, so any relaunch, Expo reload or OS kill turned a working driver
+      // Offline at once — long before the 10-minute no-telemetry rule. Now the server's session
+      // is read: still online with a location in the last 10 minutes (and franchise operational)
+      // -> resume Online, with the local countdown continuing from that real last fix (the
+      // 10-minute threshold is preserved, never reset). Past 10 minutes -> Offline, and the
+      // server is told so it matches. A failed read (no network) changes nothing on the server.
+      await startupResetRef.current;
+      try {
+        const status = await driverApi.getOnlineStatus();
+        if (cancelled) return;
+        const secondsSince = status?.seconds_since_last_location;
+        if (status?.effectively_online && status?.can_operate && typeof secondsSince === 'number') {
+          lastSuccessfulTelemetryAtRef.current = Date.now() - secondsSince * 1000;
+          autoOfflineTimeoutReachedRef.current = false;
+          wasNoSignalRef.current = false;
+          setIsOnlineState(true);
+          setIsAvailableState(!!status.is_available);
+        } else if (status?.is_online) {
+          driverApi.updateOnlineStatus(false).catch(() => {});
+        }
+      } catch {}
+
       try {
         const res = await driverApi.getActiveBooking(driver.id);
         if (cancelled || !res?.booking) return;
@@ -1145,6 +1160,14 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
           setActiveBooking(null);
           setRideState('idle');
           setIsAvailableState(true);
+        } else if (res?.booking?.pickup_eta_mins != null && res.booking.pickup_distance_km != null) {
+          // Keep "Heading to Pick-up" live with the server's road-route figure — the same one the
+          // passenger sees — instead of the one-off estimate taken at accept time.
+          const pickupEtaMinutes = Number(res.booking.pickup_eta_mins);
+          const pickupDistanceKm = Number(res.booking.pickup_distance_km);
+          setActiveBooking((prev) =>
+            prev && prev.id === activeBooking.id ? { ...prev, pickupEtaMinutes, pickupDistanceKm } : prev
+          );
         }
       } catch {}
     };

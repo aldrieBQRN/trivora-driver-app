@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Modal, TouchableOpacity, ActivityIndicator, LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, MapPin, Hand, Crosshair } from 'lucide-react-native';
+import { X, MapPin, Hand } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { reverseGeocodePoint, fetchRoute, RouteCoordinate, RouteSource } from '../services/routingService';
 import TrivoraDriverMap from './TrivoraDriverMap';
 import Button from './Button';
 import { SelectedDestination } from './DestinationSearchModal';
+import MapFocusButton from './MapFocusButton';
 
 interface DestinationPinModalProps {
   visible: boolean;
@@ -183,15 +184,11 @@ export default function DestinationPinModal({ visible, onClose, onConfirm, initi
         </View>
 
         {driverLocation ? (
-          <TouchableOpacity
-            style={[styles.floatingFocusBtn, { bottom: panelHeight + 16 }]}
+          <MapFocusButton
+            style={{ bottom: panelHeight + 16 }}
             onPress={() => setRecenterSignal((n) => n + 1)}
-            activeOpacity={0.8}
-            accessibilityRole="button"
             accessibilityLabel="Focus pick-up and destination"
-          >
-            <Crosshair size={20} color={COLORS.primary} />
-          </TouchableOpacity>
+            />
         ) : null}
 
         <View
@@ -238,20 +235,6 @@ const styles = StyleSheet.create({
   hintRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 },
   hint: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
   closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.surfaceInput, alignItems: 'center', justifyContent: 'center' },
-  floatingFocusBtn: {
-    position: 'absolute',
-    right: 16,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    ...SHADOWS.md,
-    zIndex: 10,
-  },
   panel: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
     backgroundColor: COLORS.background,

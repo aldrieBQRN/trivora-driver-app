@@ -278,6 +278,11 @@ export const driverApi = {
     return request(`/driver/bookings/history?driver_id=${driverId}`);
   },
 
+  /** Server's view of this driver's online session — used on app start to resume an online shift. */
+  getOnlineStatus: async () => {
+    return request('/driver/status');
+  },
+
   updateOnlineStatus: async (isOnline: boolean, isAvailable?: boolean) => {
     return request('/driver/status', {
       method: 'POST',
@@ -540,7 +545,11 @@ export function mapBookingRecordToIncoming(
 
   let pickupDistanceKm: number | undefined;
   let pickupEtaMinutes: number | undefined;
-  if (driverLat != null && driverLng != null && raw.pickup_lat != null && raw.pickup_lng != null) {
+  if (raw.pickup_eta_mins != null && raw.pickup_distance_km != null) {
+    // Server road-route figure (accepted rides) — the same one the Passenger app shows.
+    pickupDistanceKm = Number(raw.pickup_distance_km);
+    pickupEtaMinutes = Number(raw.pickup_eta_mins);
+  } else if (driverLat != null && driverLng != null && raw.pickup_lat != null && raw.pickup_lng != null) {
     pickupDistanceKm = Number(
       haversineKm(driverLat, driverLng, Number(raw.pickup_lat), Number(raw.pickup_lng)).toFixed(1)
     );

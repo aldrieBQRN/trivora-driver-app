@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { Check, Banknote, Smartphone, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react-native';
@@ -134,175 +134,154 @@ export default function DriverFareCollectScreen() {
   };
 
   const isPaid = paymentStatus === 'paid';
+  const MethodIcon = isCash ? Banknote : Smartphone;
+  const quickAmounts = [50, 100, 200, 500].filter((amt) => amt > totalFare);
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* Two states: Collect Payment (confirm in the footer), then Ride Completed. */}
-        <View style={[styles.checkCircle, isPaid && styles.checkCirclePaid]}>
-          {isPaid ? (
-            <Check size={26} color="#FFFFFF" strokeWidth={3} />
-          ) : isCash ? (
-            <Banknote size={24} color="#FFFFFF" />
-          ) : (
-            <Smartphone size={24} color="#FFFFFF" />
-          )}
+        <View style={styles.header}>
+          <View style={[styles.statusCircle, isPaid && styles.statusCirclePaid]}>
+            {isPaid ? <Check size={24} color={COLORS.textInverse} strokeWidth={3} /> : <MethodIcon size={22} color={COLORS.textInverse} />}
+          </View>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>{isPaid ? 'Ride Completed' : 'Collect Payment'}</Text>
+            {activeBooking && (
+              <Text style={styles.subtitle} numberOfLines={1}>
+                {isPaid ? `Paid by ${activeBooking.passengerName}` : `From ${activeBooking.passengerName}`}
+              </Text>
+            )}
+          </View>
         </View>
-        <Text style={styles.title}>{isPaid ? 'Ride Completed' : 'Collect Payment'}</Text>
-        {activeBooking && <Text style={styles.subtitle}>{activeBooking.passengerName}</Text>}
 
         {/* Fare hero */}
-        <View style={styles.fareHero}>
-          <Text style={styles.fareHeroLabel}>{isPaid ? 'Total Paid' : 'Total Fare to Collect'}</Text>
-          <Text style={styles.fareHeroValue}>₱{totalFare.toFixed(2)}</Text>
-          <Text style={styles.fareHeroBreakdown}>
+        <View style={[styles.fareCard, isPaid && styles.fareCardPaid]}>
+          <View style={styles.fareCardTop}>
+            <Text style={styles.fareCardLabel}>{isPaid ? 'TOTAL PAID' : 'TOTAL FARE TO COLLECT'}</Text>
+            <View style={styles.methodPill}>
+              <MethodIcon size={13} color={COLORS.textInverse} />
+              <Text style={styles.methodPillText}>{isCash ? 'Cash' : 'GCash'}</Text>
+            </View>
+          </View>
+          <Text style={styles.fareCardValue}>₱{totalFare.toFixed(2)}</Text>
+          <Text style={styles.fareCardBreakdown}>
             ₱{farePerPassenger.toFixed(2)} × {passengerCount} passenger{passengerCount !== 1 ? 's' : ''}
           </Text>
         </View>
 
-        {/* Payment Details Container */}
-        {isCash ? (
-          /* CASH PAYMENT */
+        {isPaid ? (
+          /* PAID — receipt-style summary */
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <Banknote size={18} color={COLORS.success} />
-              <Text style={styles.cardTitle}>Cash Payment</Text>
-              {isPaid && (
-                <View style={styles.paidBadge}>
-                  <CheckCircle2 size={13} color={COLORS.success} />
-                  <Text style={styles.paidBadgeText}>Paid</Text>
-                </View>
-              )}
+              <CheckCircle2 size={18} color={COLORS.success} />
+              <Text style={styles.cardTitle}>Payment received</Text>
+            </View>
+            <SummaryRow label="Payment method" value={isCash ? 'Cash' : 'GCash'} />
+            {isCash ? (
+              <>
+                <SummaryRow label="Amount received" value={`₱${(totalFare + (changeAmount ?? 0)).toFixed(2)}`} />
+                <SummaryRow label="Change given" value={`₱${(changeAmount ?? 0).toFixed(2)}`} />
+              </>
+            ) : (
+              <SummaryRow label="Reference no." value={paymentReference || '—'} />
+            )}
+          </View>
+        ) : isCash ? (
+          /* CASH PAYMENT */
+          <View style={styles.card}>
+            <Text style={styles.inputLabel}>AMOUNT RECEIVED</Text>
+            <View style={[styles.amountInputRow, isInsufficient && styles.amountInputRowError]}>
+              <Text style={styles.currencyPrefix}>₱</Text>
+              <TextInput
+                style={styles.amountInput}
+                keyboardType="numeric"
+                value={amountReceived}
+                onChangeText={setAmountReceived}
+                placeholder="0.00"
+                placeholderTextColor={COLORS.textMuted}
+                selectTextOnFocus
+              />
             </View>
 
-            {isPaid ? (
-              <View style={styles.paidInfoBox}>
-                <Text style={styles.paidInfoText}>
-                  Cash payment settled. Change given: ₱{(changeAmount ?? 0).toFixed(2)}.
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.cashForm}>
-                <Text style={styles.inputLabel}>AMOUNT RECEIVED</Text>
-                <View style={styles.amountInputRow}>
-                  <Text style={styles.currencyPrefix}>₱</Text>
-                  <TextInput
-                    style={styles.amountInput}
-                    keyboardType="numeric"
-                    value={amountReceived}
-                    onChangeText={setAmountReceived}
-                    placeholder="0.00"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
-                </View>
-
-                {/* Quick denomination chips */}
-                <View style={styles.quickCashRow}>
+            {/* Quick denomination buttons — full-size touch targets */}
+            <View style={styles.quickCashRow}>
+              {[totalFare, ...quickAmounts].map((amt, i) => {
+                const active = amountNum === amt;
+                return (
                   <TouchableOpacity
-                    style={[styles.quickCashChip, amountNum === totalFare && styles.quickCashChipActive]}
-                    onPress={() => handleQuickCash(totalFare)}
+                    key={i === 0 ? 'exact' : amt}
+                    style={[styles.quickCashChip, active && styles.quickCashChipActive]}
+                    onPress={() => handleQuickCash(amt)}
+                    activeOpacity={0.8}
                   >
-                    <Text style={[styles.quickCashText, amountNum === totalFare && styles.quickCashTextActive]}>
-                      Exact (₱{totalFare.toFixed(0)})
+                    <Text style={[styles.quickCashText, active && styles.quickCashTextActive]}>
+                      {i === 0 ? 'Exact' : `₱${amt}`}
                     </Text>
                   </TouchableOpacity>
+                );
+              })}
+            </View>
 
-                  {[50, 100, 200, 500].filter((amt) => amt > totalFare).map((amt) => (
-                    <TouchableOpacity
-                      key={amt}
-                      style={[styles.quickCashChip, amountNum === amt && styles.quickCashChipActive]}
-                      onPress={() => handleQuickCash(amt)}
-                    >
-                      <Text style={[styles.quickCashText, amountNum === amt && styles.quickCashTextActive]}>
-                        ₱{amt}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Change calculation */}
-                <View style={[styles.changeBox, isInsufficient ? styles.changeBoxError : styles.changeBoxSuccess]}>
-                  <Text style={styles.changeLabel}>
-                    {isInsufficient ? 'INSUFFICIENT AMOUNT' : 'CHANGE TO RETURN'}
-                  </Text>
-                  <Text style={[styles.changeValue, isInsufficient && styles.changeValueError]}>
-                    {isInsufficient ? `Need ₱${(totalFare - amountNum).toFixed(2)} more` : `₱${liveChange.toFixed(2)}`}
-                  </Text>
-                </View>
-
-              </View>
-            )}
+            {/* Change calculation */}
+            <View style={[styles.changeRow, isInsufficient ? styles.changeRowError : styles.changeRowSuccess]}>
+              <Text style={[styles.changeLabel, isInsufficient && styles.changeTextError]}>
+                {isInsufficient ? 'Still needed' : 'Change to return'}
+              </Text>
+              <Text style={[styles.changeValue, isInsufficient && styles.changeTextError]}>
+                ₱{(isInsufficient ? totalFare - amountNum : liveChange).toFixed(2)}
+              </Text>
+            </View>
           </View>
         ) : (
           /* GCASH PAYMENT */
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Smartphone size={18} color={COLORS.primary} />
-              <Text style={styles.cardTitle}>GCash Payment</Text>
-              {isPaid ? (
-                <View style={styles.paidBadge}>
-                  <CheckCircle2 size={13} color={COLORS.success} />
-                  <Text style={styles.paidBadgeText}>Paid</Text>
-                </View>
-              ) : (
-                <View style={styles.neutralBadge}>
-                  <Text style={styles.neutralBadgeText}>Awaiting Confirmation</Text>
-                </View>
-              )}
-            </View>
-
-            {isPaid ? (
-              <View style={styles.paidInfoBox}>
-                <Text style={styles.paidInfoText}>
-                  GCash payment confirmed.{paymentReference ? ` Reference: ${paymentReference}` : ''}
-                </Text>
+            <StepTitle step={1} title="Let the passenger scan your QR" />
+            {!gcashChecked ? (
+              <ActivityIndicator size="small" color={COLORS.primary} style={styles.qrLoader} />
+            ) : hasDriverQr && driverGcash?.gcash_qr_url ? (
+              <View style={styles.driverQrBox}>
+                <Image source={{ uri: driverGcash.gcash_qr_url }} style={styles.qrImage} resizeMode="contain" />
+                {driverGcash.gcash_name ? <Text style={styles.driverQrName}>{driverGcash.gcash_name}</Text> : null}
+                {driverGcash.gcash_number ? <Text style={styles.driverQrNumber}>{driverGcash.gcash_number}</Text> : null}
               </View>
             ) : (
-              <View style={styles.gcashForm}>
-                <Text style={styles.instruction}>
-                  Show this QR code to the passenger.
+              <View style={styles.warningBox}>
+                <AlertCircle size={16} color={COLORS.danger} />
+                <Text style={styles.warningText}>
+                  No GCash QR configured in your Profile. You can still enter the reference number if the passenger paid directly to your mobile number.
                 </Text>
-
-                {!gcashChecked ? (
-                  <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: SPACING.md }} />
-                ) : hasDriverQr && driverGcash?.gcash_qr_url ? (
-                  <View style={styles.driverQrBox}>
-                    <Image source={{ uri: driverGcash.gcash_qr_url }} style={styles.qrImage} resizeMode="contain" />
-                    {driverGcash.gcash_name ? (
-                      <Text style={styles.driverQrName}>{driverGcash.gcash_name}</Text>
-                    ) : null}
-                    {driverGcash.gcash_number ? (
-                      <Text style={styles.driverQrNumber}>{driverGcash.gcash_number}</Text>
-                    ) : null}
-                  </View>
-                ) : (
-                  <View style={styles.warningBox}>
-                    <AlertCircle size={16} color={COLORS.danger} />
-                    <Text style={styles.warningText}>
-                      No GCash QR configured in your Profile. You can still enter the reference number if the passenger paid directly to your mobile number.
-                    </Text>
-                  </View>
-                )}
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>
-                    Enter the GCash reference number provided by the passenger.
-                  </Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="e.g. 1023456789"
-                    placeholderTextColor={COLORS.textMuted}
-                    value={manualGcashRef}
-                    onChangeText={setManualGcashRef}
-                    keyboardType="numeric"
-                  />
-                </View>
-
               </View>
             )}
+
+            <View style={styles.divider} />
+
+            <StepTitle step={2} title="Enter the passenger's GCash reference no." />
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. 1023456789"
+              placeholderTextColor={COLORS.textMuted}
+              value={manualGcashRef}
+              onChangeText={setManualGcashRef}
+              keyboardType="numeric"
+            />
+
+            <View style={styles.statusRow}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.statusText}>Waiting for payment confirmation</Text>
+              <TouchableOpacity
+                style={styles.refreshBtn}
+                onPress={handleManualRefresh}
+                disabled={isRefreshing}
+                activeOpacity={0.7}
+                accessibilityLabel="Check payment status"
+              >
+                <RefreshCw size={14} color={COLORS.primary} />
+                <Text style={styles.refreshText}>{isRefreshing ? 'Checking…' : 'Check'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
-
       </ScrollView>
 
       {/* Footer */}
@@ -329,6 +308,26 @@ export default function DriverFareCollectScreen() {
   );
 }
 
+function StepTitle({ step, title }: { step: number; title: string }) {
+  return (
+    <View style={styles.stepRow}>
+      <View style={styles.stepBadge}>
+        <Text style={styles.stepBadgeText}>{step}</Text>
+      </View>
+      <Text style={styles.stepTitle}>{title}</Text>
+    </View>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.summaryRow}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <Text style={styles.summaryValue}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -339,56 +338,87 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    alignItems: 'center',
     padding: SPACING.lg,
     gap: SPACING.md,
   },
-  checkCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm + 4,
+  },
+  headerText: {
+    flex: 1,
+  },
+  statusCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.full,
     backgroundColor: COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkCirclePaid: {
+  statusCirclePaid: {
     backgroundColor: COLORS.success,
   },
   title: {
     ...TYPOGRAPHY.h2,
     color: COLORS.textPrimary,
-    marginTop: 2,
   },
   subtitle: {
-    ...TYPOGRAPHY.body,
+    ...TYPOGRAPHY.bodySmall,
     color: COLORS.textSecondary,
-  },
-  fareHero: {
-    alignItems: 'center',
-    marginTop: SPACING.xs,
-  },
-  fareHeroLabel: {
-    ...TYPOGRAPHY.label,
-    color: COLORS.textMuted,
-  },
-  fareHeroValue: {
-    ...TYPOGRAPHY.hero,
-    color: COLORS.primary,
     marginTop: 2,
   },
-  fareHeroBreakdown: {
+  fareCard: {
+    backgroundColor: COLORS.primary,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    ...SHADOWS.md,
+  },
+  fareCardPaid: {
+    backgroundColor: COLORS.success,
+  },
+  fareCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  fareCardLabel: {
+    ...TYPOGRAPHY.label,
+    color: COLORS.primaryTint,
+  },
+  methodPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.primaryTint,
+  },
+  methodPillText: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
+    fontWeight: '700',
+    color: COLORS.textInverse,
+  },
+  fareCardValue: {
+    ...TYPOGRAPHY.hero,
+    color: COLORS.textInverse,
+    marginTop: SPACING.sm,
+  },
+  fareCardBreakdown: {
+    ...TYPOGRAPHY.bodySmall,
+    color: COLORS.primaryTint,
     marginTop: 2,
   },
   card: {
-    width: '100%',
     backgroundColor: COLORS.backgroundSubtle,
     borderRadius: RADIUS.lg,
     padding: SPACING.md,
-    gap: SPACING.md,
+    gap: SPACING.sm + 4,
     borderWidth: 1,
-    borderColor: COLORS.borderLight,
+    borderColor: COLORS.border,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -397,59 +427,25 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     ...TYPOGRAPHY.bodyLarge,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.textPrimary,
-    flex: 1,
   },
-  paidBadge: {
+  summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.successLight,
+    justifyContent: 'space-between',
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
   },
-  paidBadgeText: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '600',
-    color: COLORS.success,
+  summaryLabel: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
   },
-  amberBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.amberLight,
-  },
-  amberBadgeText: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '600',
-    color: COLORS.amberDark,
-  },
-  neutralBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: RADIUS.sm,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  neutralBadgeText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textMuted,
-  },
-  paidInfoBox: {
-    padding: SPACING.sm + 2,
-    backgroundColor: COLORS.successLight,
-    borderRadius: RADIUS.md,
-  },
-  paidInfoText: {
-    ...TYPOGRAPHY.bodySmall,
+  summaryValue: {
+    ...TYPOGRAPHY.body,
+    fontWeight: '700',
     color: COLORS.textPrimary,
-    fontWeight: '500',
-  },
-  cashForm: {
-    gap: SPACING.sm,
   },
   inputLabel: {
     ...TYPOGRAPHY.label,
@@ -464,27 +460,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     backgroundColor: COLORS.surface,
   },
+  amountInputRowError: {
+    borderColor: COLORS.danger,
+  },
   currencyPrefix: {
-    ...TYPOGRAPHY.h2,
-    color: COLORS.textPrimary,
+    ...TYPOGRAPHY.display,
+    color: COLORS.textSecondary,
     marginRight: 6,
   },
   amountInput: {
     flex: 1,
-    ...TYPOGRAPHY.h2,
+    ...TYPOGRAPHY.display,
     color: COLORS.textPrimary,
-    paddingVertical: SPACING.xs + 4,
+    paddingVertical: SPACING.sm + 2,
   },
   quickCashRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: SPACING.xs + 2,
-    marginVertical: 2,
+    gap: SPACING.sm,
   },
   quickCashChip: {
-    paddingHorizontal: SPACING.sm + 4,
-    paddingVertical: 4,
-    borderRadius: RADIUS.sm,
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: RADIUS.md,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.surface,
@@ -494,65 +493,89 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   quickCashText: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '600',
+    ...TYPOGRAPHY.body,
+    fontWeight: '700',
     color: COLORS.textPrimary,
   },
   quickCashTextActive: {
     color: COLORS.primary,
   },
-  changeBox: {
+  changeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderRadius: RADIUS.md,
-    padding: SPACING.sm + 4,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 4,
     borderWidth: 1,
-    marginVertical: 2,
   },
-  changeBoxSuccess: {
+  changeRowSuccess: {
     backgroundColor: COLORS.successLight,
-    borderColor: COLORS.success,
+    borderColor: COLORS.successBorder,
   },
-  changeBoxError: {
+  changeRowError: {
     backgroundColor: COLORS.dangerLight,
-    borderColor: COLORS.danger,
+    borderColor: COLORS.dangerBorder,
   },
   changeLabel: {
-    ...TYPOGRAPHY.label,
-    color: COLORS.textSecondary,
-  },
-  changeValue: {
-    ...TYPOGRAPHY.h3,
-    color: COLORS.success,
-    marginTop: 2,
-  },
-  changeValueError: {
-    color: COLORS.danger,
-  },
-  gcashForm: {
-    gap: SPACING.md,
-  },
-  instruction: {
-    ...TYPOGRAPHY.bodySmall,
-    color: COLORS.textSecondary,
-    lineHeight: 18,
-  },
-  driverQrBox: {
-    alignItems: 'center',
-    backgroundColor: COLORS.surfaceInput,
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    gap: SPACING.xs,
-  },
-  qrImage: {
-    width: 170,
-    height: 170,
-    borderRadius: RADIUS.md,
-    backgroundColor: '#FFFFFF',
-  },
-  driverQrName: {
     ...TYPOGRAPHY.body,
     fontWeight: '600',
     color: COLORS.textPrimary,
-    marginTop: 4,
+  },
+  changeValue: {
+    ...TYPOGRAPHY.h2,
+    color: COLORS.success,
+  },
+  changeTextError: {
+    color: COLORS.dangerDark,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  stepBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepBadgeText: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700',
+    color: COLORS.textInverse,
+  },
+  stepTitle: {
+    ...TYPOGRAPHY.body,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    flex: 1,
+  },
+  qrLoader: {
+    marginVertical: SPACING.lg,
+  },
+  driverQrBox: {
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: SPACING.md,
+    gap: 2,
+  },
+  qrImage: {
+    width: 210,
+    height: 210,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.surface,
+    marginBottom: SPACING.xs,
+  },
+  driverQrName: {
+    ...TYPOGRAPHY.body,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
   },
   driverQrNumber: {
     ...TYPOGRAPHY.caption,
@@ -571,19 +594,49 @@ const styles = StyleSheet.create({
     color: COLORS.dangerDark,
     flex: 1,
   },
-  inputGroup: {
-    width: '100%',
-    gap: SPACING.xs,
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.border,
   },
   textInput: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
     borderRadius: RADIUS.md,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 4,
-    ...TYPOGRAPHY.bodySmall,
+    paddingVertical: SPACING.sm + 4,
+    ...TYPOGRAPHY.bodyLarge,
+    fontWeight: '600',
+    letterSpacing: 1,
     color: COLORS.textPrimary,
     backgroundColor: COLORS.surface,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    padding: SPACING.sm + 2,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primaryTint,
+  },
+  statusText: {
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '600',
+    color: COLORS.primary,
+    flex: 1,
+  },
+  refreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.surface,
+  },
+  refreshText: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
   footer: {
     padding: SPACING.md,

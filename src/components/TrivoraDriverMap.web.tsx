@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Compass, LocateFixed } from 'lucide-react-native';
-import { COLORS, SHADOWS } from '../constants/theme';
 import { TrivoraDriverMapProps } from './TrivoraDriverMap.types';
 import { haversineKm } from '../utils/geo';
+import MapFocusButton from './MapFocusButton';
 import {
   MAP_STYLES,
   ACTIVE_RIDE_PITCH,
@@ -509,28 +508,19 @@ export default function TrivoraDriverMapWeb({
 
       {/* Focus Current Location Button (Home only) */}
       {focusCurrentLocation && !target && (
-        <TouchableOpacity
-          style={[styles.focusButton, { bottom: bottomInset + 12 }, isFollowing && styles.focusButtonActive]}
+        <MapFocusButton
+          style={{ bottom: bottomInset + 12 }}
           onPress={handleFocus}
-          activeOpacity={0.8}
           accessibilityLabel="Focus current location"
-        >
-          <LocateFixed size={18} color={isFollowing ? '#FFFFFF' : COLORS.primary} />
-        </TouchableOpacity>
+        />
       )}
 
-      {/* Floating Compass / Recenter Button */}
-      {showCompass && (
+      {/* Floating Compass / Recenter Button — only on maps WITHOUT the Focus button above (same
+          rule as the native map), so Home never shows two focus buttons stacked in one spot. */}
+      {showCompass && !(focusCurrentLocation && !target) && (
         // Same spot as the Focus button (right edge, just above the bottom panel) — at the top-right
         // it sat under the overlay header / route card on the ride screens.
-        <TouchableOpacity
-          style={[styles.compassButton, { bottom: bottomInset + 12 }]}
-          onPress={handleRecenter}
-          activeOpacity={0.8}
-          accessibilityLabel="Recenter map"
-        >
-          <Compass size={18} color="#D97706" />
-        </TouchableOpacity>
+        <MapFocusButton style={{ bottom: bottomInset + 12 }} onPress={handleRecenter} />
       )}
     </View>
   );
@@ -542,37 +532,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#FAF6EE',
     position: 'relative',
     overflow: 'hidden',
-  },
-  focusButton: {
-    position: 'absolute',
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.97)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    ...SHADOWS.sm,
-    zIndex: 10,
-  },
-  focusButtonActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  compassButton: {
-    position: 'absolute',
-    right: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E8DEC8',
-    ...SHADOWS.sm,
-    zIndex: 10,
   },
 });

@@ -201,6 +201,7 @@ export default function DriverDashboardScreen({
         driverLocation={driverLocation}
         isOnline={isOnline}
         focusCurrentLocation
+        showCompass={false}
         mapVariant="bright"
         pitch={0}
         topInset={headerHeight}

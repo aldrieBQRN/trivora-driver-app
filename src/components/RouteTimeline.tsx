@@ -16,9 +16,9 @@ interface RouteTimelineProps {
 }
 
 /**
- * Shared pickup → drop-off presentation — a continuous rail (dot, connecting line, pin) next to
- * the address rows, matching the Passenger app's RouteSummaryStrip so both apps draw a route the
- * same way. Renders either stop alone (the "going to pickup" and "in transit to drop-off" screens
+ * Shared pickup → drop-off presentation — a continuous rail (green pin, connecting line, red pin)
+ * next to the address rows, matching the Passenger app's RouteSummaryStrip so both apps draw a
+ * route the same way. Renders either stop alone (the "going to pickup" and "in transit to drop-off" screens
  * only need one leg) or both, connected by one line spanning the full row height.
  */
 export default function RouteTimeline({ pickup, dropoff, compact }: RouteTimelineProps) {
@@ -27,7 +27,11 @@ export default function RouteTimeline({ pickup, dropoff, compact }: RouteTimelin
   return (
     <View style={styles.container}>
       <View style={styles.rail}>
-        {pickup && <View style={styles.pickupDot} />}
+        {pickup && (
+          <View style={styles.pickupPin}>
+            <MapPin size={9} color="#FFFFFF" />
+          </View>
+        )}
         {showBoth && <View style={styles.connector} />}
         {dropoff && (
           <View style={styles.dropoffPin}>
@@ -78,11 +82,14 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     paddingBottom: 6,
   },
-  pickupDot: {
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    backgroundColor: '#2563EB',
+  // Green pick-up / red drop-off pins — the same colors as the map pins.
+  pickupPin: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: COLORS.success,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   connector: {
     width: 1.5,

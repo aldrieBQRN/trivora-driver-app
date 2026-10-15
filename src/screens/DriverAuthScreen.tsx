@@ -131,11 +131,9 @@ export default function DriverAuthScreen({ onGoToRegister, onForgotPassword }: D
 
         {/* Identifies this as the Driver app at a glance — both Trivora apps share the same
             logo/layout, so without this the two login screens are visually indistinguishable.
-            Amber is otherwise unused chrome here (only ever a star-rating fill elsewhere),
-            reserved so this badge reads as this app's own identity accent. The Passenger app's
-            own login screen carries the equivalent badge in the shared brand navy instead. */}
+            Styled in the shared brand navy to match the Passenger app's badge. */}
         <View style={styles.appBadge}>
-          <TricycleIcon size={13} color={COLORS.amber} />
+          <TricycleIcon size={13} color={COLORS.primary} />
           <Text style={styles.appBadgeText}>DRIVER APP</Text>
         </View>
 
@@ -230,14 +228,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   brandLogo: {
-    width: 136,
-    height: 136,
+    width: 180,
+    height: 180,
   },
   appBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: COLORS.amberLight,
+    backgroundColor: COLORS.primaryTint,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
@@ -245,7 +243,7 @@ const styles = StyleSheet.create({
   },
   appBadgeText: {
     ...TYPOGRAPHY.label,
-    color: COLORS.textPrimary,
+    color: COLORS.primary,
   },
   title: {
     ...TYPOGRAPHY.h1,

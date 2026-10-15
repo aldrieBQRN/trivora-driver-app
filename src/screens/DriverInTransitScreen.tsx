@@ -1,7 +1,5 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, LayoutChangeEvent } from 'react-native';
-import { BottomSheetView } from '@gorhom/bottom-sheet';
-import type BottomSheet from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
@@ -14,7 +12,7 @@ import RouteTimeline from '../components/RouteTimeline';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
 import RideStatusPill from '../components/RideStatusPill';
-import AppBottomSheet from '../components/AppBottomSheet';
+import StaticBottomPanel from '../components/StaticBottomPanel';
 import { useLiveRoute } from '../hooks/useLiveRoute';
 import { useToast } from '../components/Toast';
 import { callPhoneNumber, messagePhoneNumber } from '../utils/deviceContact';
@@ -30,7 +28,6 @@ export default function DriverInTransitScreen() {
     retryLocation,
     headingDeg,
   } = useDriverShift();
-  const sheetRef = useRef<BottomSheet>(null);
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const [isCompleting, setIsCompleting] = useState(false);
@@ -124,65 +121,65 @@ export default function DriverInTransitScreen() {
         <RideStatusPill label={`Ride in Progress · ${booking.distanceKm} km to go`} />
       </View>
 
-      <AppBottomSheet ref={sheetRef} enableDynamicSizing index={0} animateOnMount={false}>
-        <BottomSheetView
-          style={[styles.sheetContent, { paddingBottom: insets.bottom + SPACING.md }]}
-          onLayout={handleSheetLayout}
-        >
-          <View style={styles.passengerRow}>
-            <Avatar name={booking.passengerName} imageUri={booking.passengerAvatarUrl} size={42} tone="driver" />
-            <View style={styles.passengerCol}>
-              <Text style={styles.passengerName}>{booking.passengerName}</Text>
-              <Text style={styles.passengerMeta}>{booking.passengerTrips ?? 0} Completed Rides</Text>
-            </View>
-            <View style={styles.fareCol}>
-              <Text style={styles.fareValue}>₱{booking.fare.toFixed(2)}</Text>
-              <StatusBadge label={(booking.paymentMethod || 'cash').toUpperCase()} tone="brand" size="sm" />
-            </View>
+      <StaticBottomPanel
+        style={[styles.sheetContent, { paddingBottom: insets.bottom + SPACING.md }]}
+        onLayout={handleSheetLayout}
+      >
+        <View style={styles.passengerRow}>
+          <Avatar name={booking.passengerName} imageUri={booking.passengerAvatarUrl} size={42} tone="driver" />
+          <View style={styles.passengerCol}>
+            <Text style={styles.passengerName}>{booking.passengerName}</Text>
+            <Text style={styles.passengerMeta}>
+              {booking.passengerCount} Passenger{booking.passengerCount !== 1 ? 's' : ''}
+            </Text>
           </View>
-
-          <RouteTimeline
-            dropoff={{
-              label: 'Destination',
-              address: booking.dropoff,
-              meta: `${booking.distanceKm} km`,
-            }}
-          />
-
-          {/* Call/Message stay available through the ride itself, same as the Passenger app's own
-              ActiveRideScreen — no driver cancellation here (see DriverEnRoutePickupScreen; the
-              backend also rejects it past 'accepted', see BookingController::updateStatus). */}
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={[styles.actionItem, !hasPassengerPhone && styles.actionItemDisabled]}
-              onPress={handleCall}
-              activeOpacity={0.7}
-              disabled={!hasPassengerPhone}
-            >
-              <View style={styles.actionIconBox}>
-                <Phone size={18} color={COLORS.primary} />
-              </View>
-              <Text style={styles.actionLabel}>Call</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionItem, !hasPassengerPhone && styles.actionItemDisabled]}
-              onPress={handleMessage}
-              activeOpacity={0.7}
-              disabled={!hasPassengerPhone}
-            >
-              <View style={styles.actionIconBox}>
-                <MessageSquare size={18} color={COLORS.primary} />
-              </View>
-              <Text style={styles.actionLabel}>Message</Text>
-            </TouchableOpacity>
+          <View style={styles.fareCol}>
+            <Text style={styles.fareValue}>₱{booking.fare.toFixed(2)}</Text>
+            <StatusBadge label={(booking.paymentMethod || 'cash').toUpperCase()} tone="brand" size="sm" />
           </View>
+        </View>
 
-          <RideProgressStepper currentStep="in_transit" />
+        <RouteTimeline
+          dropoff={{
+            label: 'Destination',
+            address: booking.dropoff,
+            meta: `${booking.distanceKm} km`,
+          }}
+        />
 
-          <Button label="Complete Ride" onPress={handleComplete} loading={isCompleting} />
-        </BottomSheetView>
-      </AppBottomSheet>
+        {/* Call/Message stay available through the ride itself, same as the Passenger app's own
+            ActiveRideScreen — no driver cancellation here (see DriverEnRoutePickupScreen; the
+            backend also rejects it past 'accepted', see BookingController::updateStatus). */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[styles.actionItem, !hasPassengerPhone && styles.actionItemDisabled]}
+            onPress={handleCall}
+            activeOpacity={0.7}
+            disabled={!hasPassengerPhone}
+          >
+            <View style={styles.actionIconBox}>
+              <Phone size={18} color={COLORS.primary} />
+            </View>
+            <Text style={styles.actionLabel}>Call</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionItem, !hasPassengerPhone && styles.actionItemDisabled]}
+            onPress={handleMessage}
+            activeOpacity={0.7}
+            disabled={!hasPassengerPhone}
+          >
+            <View style={styles.actionIconBox}>
+              <MessageSquare size={18} color={COLORS.primary} />
+            </View>
+            <Text style={styles.actionLabel}>Message</Text>
+          </TouchableOpacity>
+        </View>
+
+        <RideProgressStepper currentStep="in_transit" />
+
+        <Button label="Complete Ride" onPress={handleComplete} loading={isCompleting} />
+      </StaticBottomPanel>
     </View>
   );
 }
@@ -200,7 +197,7 @@ const styles = StyleSheet.create({
   },
   sheetContent: {
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xs,
+    paddingTop: SPACING.lg,
     gap: SPACING.md,
   },
   passengerRow: {

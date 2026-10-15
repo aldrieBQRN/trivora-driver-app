@@ -69,7 +69,8 @@ const AppBottomSheet = forwardRef<BottomSheet, AppBottomSheetProps>(function App
       enableContentPanningGesture={false}
       enableHandlePanningGesture={false}
       enableOverDrag={false}
-      handleIndicatorStyle={backgroundVariant === 'dark' ? styles.handleDark : styles.handleLight}
+      // No grab handle: these sheets are fixed panels (all drag gestures are disabled above).
+      handleComponent={null}
       backgroundComponent={(props) => <Background {...props} backgroundVariant={backgroundVariant} />}
       style={SHADOWS.sheet as object}
     >
@@ -90,13 +91,5 @@ const styles = StyleSheet.create({
   },
   backgroundDark: {
     backgroundColor: COLORS.darkBackground,
-  },
-  handleLight: {
-    backgroundColor: COLORS.border,
-    width: 40,
-  },
-  handleDark: {
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    width: 40,
   },
 });

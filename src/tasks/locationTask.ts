@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DeviceEventEmitter } from 'react-native';
 import { driverApi, setAuthToken } from '../services/api';
+import { getDriverTokenForBackground, DRIVER_SESSION_STORAGE_KEY } from '../services/secureStorage';
 
 /**
  * Real background GPS delivery for the driver shift watcher (DriverShiftContext), using
@@ -48,7 +49,7 @@ export const LOCATION_EVENT_NAME = 'trivora:location-update';
 // session, it does not create a second one. Exported for DriverShiftContext's startup
 // reconciliation: an orphaned task cannot authenticate anything without a session, so it is
 // stopped on relaunch when no session is left.
-export const SESSION_STORAGE_KEY = '@trivora_driver_session';
+export const SESSION_STORAGE_KEY = DRIVER_SESSION_STORAGE_KEY;
 export const TRACKING_MODE_STORAGE_KEY = '@trivora_tracking_mode';
 // Mirrors DriverShiftContext's `isOnline` state. Checked on every task invocation (see below) as
 // a self-healing safety net: if the app is force-quit while online, no cleanup ever runs, and
@@ -146,11 +147,9 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
     const now = Date.now();
     if (now - lastSentAt < SEND_INTERVAL_MS) return;
 
-    const sessionRaw = await AsyncStorage.getItem(SESSION_STORAGE_KEY);
-    if (!sessionRaw) return; // no logged-in driver session — nothing to authenticate the send with
-    const session = JSON.parse(sessionRaw) as { token?: string };
-    if (!session.token) return;
-    setAuthToken(session.token);
+    const token = await getDriverTokenForBackground();
+    if (!token) return; // no authenticated driver token — nothing to authenticate the send with
+    setAuthToken(token);
 
     // Claim the window BEFORE attempting the send — the same ordering claimTransmitSlot() uses on
     // the foreground side. A send that fails still consumed this window (its reading is queued in
