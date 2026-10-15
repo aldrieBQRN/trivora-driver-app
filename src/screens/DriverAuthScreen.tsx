@@ -208,7 +208,10 @@ export default function DriverAuthScreen({ onGoToRegister, onForgotPassword }: D
           />
 
           <TouchableOpacity style={styles.switchLink} onPress={onGoToRegister} activeOpacity={0.7}>
-            <Text style={styles.switchLinkText}>New driver? Register with MTOP franchise check</Text>
+            <Text style={styles.switchLinkText}>
+              <Text style={styles.switchLinkPrefix}>New driver? </Text>
+              Register with MTOP franchise check
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -318,5 +321,9 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: 12,
     fontWeight: '700',
+  },
+  switchLinkPrefix: {
+    color: COLORS.textSecondary,
+    fontWeight: '400',
   },
 });

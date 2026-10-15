@@ -20,15 +20,25 @@ import { dismissPresentedByGroup, extractPushData } from '../services/pushNotifi
 export const BACKGROUND_NOTIFICATION_TASK = 'trivora-driver-notification-task';
 
 if (Platform.OS !== 'web') {
-  TaskManager.defineTask<Notifications.NotificationTaskPayload>(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }) => {
-    if (error || !data || 'actionIdentifier' in data) return;
-    const payload = extractPushData((data as { data?: unknown }).data);
-    if (payload.type === 'dismiss' && payload.group) {
-      await dismissPresentedByGroup(payload.group);
-    }
-  });
+  try {
+    TaskManager.defineTask<Notifications.NotificationTaskPayload>(BACKGROUND_NOTIFICATION_TASK, async ({ data, error }) => {
+      try {
+        if (error || !data || 'actionIdentifier' in data) return;
+        const payload = extractPushData((data as { data?: unknown }).data);
+        if (payload.type === 'dismiss' && payload.group) {
+          await dismissPresentedByGroup(payload.group);
+        }
+      } catch {}
+    });
 
-  Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK).catch((err) => {
-    if (__DEV__) console.warn('[push] background notification task not registered:', err?.message || err);
-  });
+    setTimeout(() => {
+      try {
+        Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK).catch((err) => {
+          if (__DEV__) console.warn('[push] background notification task not registered:', err?.message || err);
+        });
+      } catch {}
+    }, 1000);
+  } catch (err) {
+    if (__DEV__) console.warn('[push] TaskManager defineTask error:', err);
+  }
 }

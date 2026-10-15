@@ -74,10 +74,10 @@
         "expo-build-properties",
         {
           "android": {
-            "enableMinifyInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true,
+            "enableMinifyInReleaseBuilds": false,
+            "enableShrinkResourcesInReleaseBuilds": false,
             "useLegacyPackaging": true,
-            "extraProguardRules": "-keep class org.maplibre.** { *; }\n-keep class com.facebook.react.** { *; }",
+            "extraProguardRules": "-keep class com.swmansion.reanimated.** { *; }\n-keep class com.swmansion.worklets.** { *; }\n-keep class com.swmansion.gesturehandler.** { *; }\n-keep class com.facebook.jni.** { *; }\n-keep class com.facebook.react.turbomodule.** { *; }\n-keep class org.maplibre.** { *; }\n-keep class com.facebook.react.** { *; }\n-keep class expo.modules.interfaces.taskManager.** { *; }\n-keep class expo.modules.notifications.** { *; }\n-keepclasseswithmembernames class * { native <methods>; }",
             "buildArchs": ["arm64-v8a", "armeabi-v7a"],
             "packagingOptions": {
               "exclude": [

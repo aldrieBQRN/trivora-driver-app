@@ -101,11 +101,12 @@ type Ping = {
   recorded_at: string;
 };
 
-TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
-  if (error) {
-    if (__DEV__) console.warn('[telemetry:bg] task error:', error.message);
-    return;
-  }
+try {
+  TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
+    if (error) {
+      if (__DEV__) console.warn('[telemetry:bg] task error:', error.message);
+      return;
+    }
 
   const locations = (data as { locations?: Location.LocationObject[] } | undefined)?.locations;
   const latest = locations && locations[locations.length - 1];
@@ -188,3 +189,6 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
     if (__DEV__) console.warn('[telemetry:bg] unexpected error:', (e as Error)?.message || e);
   }
 });
+} catch (taskErr) {
+  if (__DEV__) console.warn('[telemetry:bg] TaskManager.defineTask error:', taskErr);
+}
