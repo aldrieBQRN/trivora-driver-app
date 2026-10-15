@@ -22,7 +22,10 @@
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://trivora-mh55.onrender.com/api/v1"
+      }
     }
   },
   "submit": {
