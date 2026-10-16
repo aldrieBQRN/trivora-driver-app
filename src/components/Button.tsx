@@ -1,10 +1,5 @@
-import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import React, { useRef } from 'react';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, ViewStyle } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
 import { BUTTONS, COLORS, RADIUS, SHADOWS, TYPOGRAPHY } from '../constants/theme';
 
@@ -43,28 +38,28 @@ export default function Button({
   const height = size === 'lg' ? BUTTONS.touchHeight : BUTTONS.touchHeightSm;
   const variantStyle = VARIANT_STYLES[variant];
 
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const scale = useRef(new Animated.Value(1)).current;
+  const handlePressIn = () => {
+    Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, damping: 18, stiffness: 300 }).start();
+  };
+  const handlePressOut = () => {
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 300 }).start();
+  };
 
   return (
     <AnimatedPressable
       style={[
         styles.base,
-        { height },
+        { height, transform: [{ scale }] },
         variantStyle.container,
         fullWidth && styles.fullWidth,
         isDisabled && styles.disabled,
-        animatedStyle,
         style,
       ]}
       onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       disabled={isDisabled}
-      onPressIn={() => {
-        scale.value = withSpring(0.97, { damping: 18, stiffness: 300 });
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, { damping: 18, stiffness: 300 });
-      }}
     >
       {loading ? (
         <ActivityIndicator size="small" color={variantStyle.text.color} />

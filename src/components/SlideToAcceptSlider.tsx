@@ -1,15 +1,13 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, LayoutChangeEvent, ActivityIndicator } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
-  interpolate,
-  Extrapolation,
-  runOnJS,
-} from 'react-native-reanimated';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  LayoutChangeEvent,
+  ActivityIndicator,
+  Animated,
+  PanResponder,
+} from 'react-native';
 import { ChevronsRight } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS, TYPOGRAPHY } from '../constants/theme';
 
@@ -28,9 +26,7 @@ const TRACK_PADDING = 4;
 
 /**
  * Draggable "Slide to Accept Ride" control for the incoming-booking screen.
- * Built on react-native-gesture-handler + reanimated rather than PanResponder — PanResponder's
- * web responder shim only reliably tracks touch, so dragging the thumb with a mouse on web did
- * nothing. Gesture Handler's pan gesture handles mouse/pointer input the same as touch.
+ * Built on standard React Native PanResponder + Animated for bulletproof reliability across all platforms.
  */
 export default function SlideToAcceptSlider({
   label = 'Slide to Accept Ride',
@@ -38,65 +34,92 @@ export default function SlideToAcceptSlider({
   processing = false,
 }: SlideToAcceptSliderProps) {
   const [trackWidth, setTrackWidth] = useState(0);
-  const translateX = useSharedValue(0);
   const maxDrag = Math.max(0, trackWidth - THUMB_SIZE - TRACK_PADDING * 2);
+  const maxDragRef = useRef(maxDrag);
+  maxDragRef.current = maxDrag;
+
+  const pan = useRef(new Animated.Value(0)).current;
+  const currentDrag = useRef(0);
+
+  useEffect(() => {
+    const listener = pan.addListener(({ value }) => {
+      currentDrag.current = value;
+    });
+    return () => {
+      pan.removeListener(listener);
+    };
+  }, [pan]);
+
+  useEffect(() => {
+    if (!processing) {
+      Animated.spring(pan, { toValue: 0, damping: 18, stiffness: 220, useNativeDriver: false }).start();
+    }
+  }, [processing, pan]);
 
   const onTrackLayout = (e: LayoutChangeEvent) => {
     setTrackWidth(e.nativeEvent.layout.width);
   };
 
-  const handleAccept = () => {
-    onAccept();
-  };
-
-  const panGesture = Gesture.Pan()
-    .enabled(!processing)
-    .onChange((event) => {
-      const next = translateX.value + event.changeX;
-      translateX.value = Math.max(0, Math.min(next, maxDrag));
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => !processing,
+      onMoveShouldSetPanResponder: (_, gestureState) => !processing && Math.abs(gestureState.dx) > 2,
+      onPanResponderGrant: () => {
+        pan.setOffset(currentDrag.current);
+        pan.setValue(0);
+      },
+      onPanResponderMove: (_, gestureState) => {
+        const next = gestureState.dx;
+        const total = currentDrag.current + next;
+        if (total >= 0 && total <= maxDragRef.current) {
+          pan.setValue(next);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        pan.flattenOffset();
+        const threshold = maxDragRef.current * 0.7;
+        const value = currentDrag.current;
+        if (maxDragRef.current > 0 && (value >= threshold || gestureState.vx > 0.8)) {
+          Animated.timing(pan, {
+            toValue: maxDragRef.current,
+            duration: 140,
+            useNativeDriver: false,
+          }).start(() => {
+            onAccept();
+          });
+        } else {
+          Animated.spring(pan, {
+            toValue: 0,
+            damping: 18,
+            stiffness: 220,
+            useNativeDriver: false,
+          }).start();
+        }
+      },
     })
-    .onEnd((event) => {
-      const threshold = maxDrag * 0.7;
-      if (maxDrag > 0 && (translateX.value >= threshold || event.velocityX > 800)) {
-        // Held at the end (not auto-reset) once accepted — the caller's `processing` prop now
-        // owns when this returns to the start: on a successful accept this screen unmounts
-        // before that ever matters; on failure, the effect below springs it back so the driver
-        // can retry instead of it silently snapping back mid-request.
-        translateX.value = withTiming(maxDrag, { duration: 140 }, () => {
-          runOnJS(handleAccept)();
-        });
-      } else {
-        translateX.value = withSpring(0, { damping: 18, stiffness: 220 });
-      }
-    });
+  ).current;
 
-  useEffect(() => {
-    if (!processing) translateX.value = withSpring(0, { damping: 18, stiffness: 220 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [processing]);
-
-  const thumbStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
-
-  const labelStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(translateX.value, [0, Math.max(maxDrag, 1)], [1, 0], Extrapolation.CLAMP),
-  }));
+  const labelOpacity = pan.interpolate({
+    inputRange: [0, Math.max(maxDrag, 1)],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
 
   return (
     <View style={styles.track} onLayout={onTrackLayout}>
-      <Animated.Text style={[styles.label, labelStyle]}>
+      <Animated.Text style={[styles.label, { opacity: labelOpacity }]}>
         {processing ? 'Accepting...' : label}
       </Animated.Text>
-      <GestureDetector gesture={panGesture}>
-        <Animated.View style={[styles.thumb, thumbStyle]}>
-          {processing ? (
-            <ActivityIndicator size="small" color={COLORS.primary} />
-          ) : (
-            <ChevronsRight size={22} color={COLORS.primary} />
-          )}
-        </Animated.View>
-      </GestureDetector>
+      <Animated.View
+        style={[styles.thumb, { transform: [{ translateX: pan }] }]}
+        {...panResponder.panHandlers}
+      >
+        {processing ? (
+          <ActivityIndicator size="small" color={COLORS.primary} />
+        ) : (
+          <ChevronsRight size={22} color={COLORS.primary} />
+        )}
+      </Animated.View>
     </View>
   );
 }

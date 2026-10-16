@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, LayoutChangeEvent } from 'react-native';
-import { BottomSheetView } from '@gorhom/bottom-sheet';
-import type BottomSheet from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
@@ -12,7 +10,7 @@ import SlideToAcceptSlider from '../components/SlideToAcceptSlider';
 import Avatar from '../components/Avatar';
 import RouteTimeline from '../components/RouteTimeline';
 import StatusBadge from '../components/StatusBadge';
-import AppBottomSheet from '../components/AppBottomSheet';
+import AppBottomSheet, { BottomSheetView, BottomSheetRef } from '../components/AppBottomSheet';
 import { useLiveRoute } from '../hooks/useLiveRoute';
 import type { IncomingBooking } from '../types';
 
@@ -60,7 +58,7 @@ export default function DriverDispatchScreen() {
   useEffect(() => {
     setCountdown(computeInitialCountdown(incomingBooking));
   }, [incomingBooking?.id]);
-  const sheetRef = useRef<BottomSheet>(null);
+  const sheetRef = useRef<BottomSheetRef>(null);
   const insets = useSafeAreaInsets();
   const [topOverlayHeight, setTopOverlayHeight] = useState(0);
   const handleTopLayout = (e: LayoutChangeEvent) => setTopOverlayHeight(e.nativeEvent.layout.height);
