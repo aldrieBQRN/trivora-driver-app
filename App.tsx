@@ -62,7 +62,7 @@ function DriverAppNavigator() {
   const { rideState, incomingBooking, setRideState, setIncomingBooking, setActiveBooking } = useDriverShift();
   const { session: qrSession } = useQrSession();
   // Manual Ride (walk-in passenger without the app): its screen opens from Home or on resume.
-  const { isOpen: isManualRideVisible } = useManualRide();
+  const { isOpen: isManualRideVisible, ride: manualRide } = useManualRide();
   const { isCenterOpen, openCenter, closeCenter, pendingTarget, clearPendingTarget } = useDriverNotifications();
   const insets = useSafeAreaInsets();
 
@@ -330,6 +330,13 @@ function DriverAppNavigator() {
   // map + floating header + insets, so they render outside the padded SafeAreaView below.
   const isFullBleedScreen = isAuthenticated && isMapRideState;
   const isTabBarVisible = isAuthenticated && !isRideFlowActive && pushedScreen === null && !isQrSessionVisible && !isManualRideVisible;
+  // Home and Manual Ride in progress are full-bleed maps whose overlay ScreenHeader already pads
+  // the status bar itself (same as the Passenger Home header) — padding it here too doubled the
+  // gap above the header.
+  const ownsTopInset =
+    isAuthenticated &&
+    !isRideFlowActive &&
+    ((isManualRideVisible && !!manualRide) || (isTabBarVisible && activeTab === 'home'));
 
   if (isFullBleedScreen) {
     return (
@@ -343,7 +350,7 @@ function DriverAppNavigator() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
+    <SafeAreaView style={styles.safeArea} edges={ownsTopInset ? [] : ['top']}>
       <StatusBar style="dark" backgroundColor={COLORS.background} />
       <OfflineBanner />
       <View style={styles.container}>
