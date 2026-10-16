@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverAuthProvider, useDriverAuth } from './src/context/DriverAuthContext';
 import { DriverShiftProvider, useDriverShift } from './src/context/DriverShiftContext';
@@ -375,7 +374,7 @@ function DriverAppNavigator() {
 
 export default function App() {
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <View style={{ flex: 1 }}>
       <SafeAreaProvider>
         <NetworkProvider>
           <ToastProvider>
@@ -393,7 +392,7 @@ export default function App() {
           </ToastProvider>
         </NetworkProvider>
       </SafeAreaProvider>
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
