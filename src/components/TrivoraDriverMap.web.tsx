@@ -13,11 +13,10 @@ import {
   boundsOf,
 } from '../constants/openFreeMap';
 
+import { resolveMarkerUri } from '../constants/tricycleMarkerUri';
+
 const TRICYCLE_MARKER_IMAGE = require('../../assets/images/tricycle-marker.webp');
-const tricycleUri: string =
-  typeof TRICYCLE_MARKER_IMAGE === 'string'
-    ? TRICYCLE_MARKER_IMAGE
-    : TRICYCLE_MARKER_IMAGE?.default || TRICYCLE_MARKER_IMAGE?.uri || String(TRICYCLE_MARKER_IMAGE);
+const tricycleUri: string = resolveMarkerUri(TRICYCLE_MARKER_IMAGE);
 
 const REFRAME_THRESHOLD_KM = 0.12;
 const EDGE_MARGIN = 40;
@@ -25,12 +24,13 @@ const HOME_RECENTER_THRESHOLD_KM = 0.15;
 const MAX_FIT_ROUTE_POINTS = 40;
 
 export function driverIconHtml(heading: number, isOnline: boolean, uri: string): string {
+  const safeUri = resolveMarkerUri(uri);
   const filter = isOnline
     ? 'filter: drop-shadow(0 2px 5px rgba(0,0,0,0.35));'
     : 'filter: grayscale(100%) opacity(0.55);';
   return `
     <div style="width:45px;height:30px;display:flex;align-items:center;justify-content:center;${filter}transform:rotate(${heading}deg);">
-      <img src="${uri}" alt="Tricycle" style="width:45px;height:30px;object-fit:contain;pointer-events:none;" />
+      <img src="${safeUri}" alt="Tricycle" style="width:45px;height:30px;object-fit:contain;pointer-events:none;" />
     </div>
   `;
 }
