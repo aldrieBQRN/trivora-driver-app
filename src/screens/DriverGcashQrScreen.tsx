@@ -33,6 +33,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import { useToast } from '../components/Toast';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { driverApi } from '../services/api';
+import { checkPickedPhoto, uploadFileFor } from '../utils/uploadCheck';
 import { DriverGcashQrStatus } from '../types';
 
 interface DriverGcashQrScreenProps {
@@ -166,14 +167,14 @@ export default function DriverGcashQrScreen({ onBack }: DriverGcashQrScreenProps
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
+        const problem = checkPickedPhoto(asset);
+        if (problem) {
+          showToast(problem, 'info');
+          return;
+        }
         setUploadingQr(true);
         try {
-          const file = {
-            uri: asset.uri,
-            name: asset.fileName || `gcash-qr-${Date.now()}.jpg`,
-            type: asset.mimeType || 'image/jpeg',
-          };
-          const res = await driverApi.uploadGcashQr(file);
+          const res = await driverApi.uploadGcashQr(uploadFileFor(asset, 'gcash-qr'));
           showToast('GCash QR code updated successfully.', 'success');
           const updatedStatus: DriverGcashQrStatus = (res as any)?.driver || res;
           setQrStatus(updatedStatus);

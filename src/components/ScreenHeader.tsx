@@ -1,7 +1,6 @@
 import React, { ReactNode } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
 import type { LucideIcon } from 'lucide-react-native';
 import { ArrowLeft } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
@@ -92,9 +91,9 @@ export default function ScreenHeader({
 
   if (isOverlay) {
     return (
-      <BlurView intensity={40} tint="dark" style={styles.blurContainer} onLayout={onLayout}>
+      <View style={[styles.blurContainer, styles.translucentOverlayContainer]} onLayout={onLayout}>
         {content}
-      </BlurView>
+      </View>
     );
   }
 
@@ -119,6 +118,12 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
     overflow: 'hidden',
+  },
+  translucentOverlayContainer: {
+    backgroundColor: 'rgba(15, 30, 54, 0.88)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255, 255, 255, 0.12)',
+    ...SHADOWS.md,
   },
   opaqueContainer: {
     backgroundColor: COLORS.background,

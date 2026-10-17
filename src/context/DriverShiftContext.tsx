@@ -196,9 +196,11 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
 
       if (Platform.OS === 'web') return;
       try {
-        const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
-        if (started) {
-          await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+        if (typeof Location?.hasStartedLocationUpdatesAsync === 'function') {
+          const started = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => false);
+          if (started) {
+            await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME).catch(() => {});
+          }
         }
       } catch {
         // Native module unavailable or permissions denied

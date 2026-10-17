@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { checkPickedPhoto, uploadFileFor } from '../utils/uploadCheck';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { Camera, XCircle, AlertCircle } from 'lucide-react-native';
 import Button from './Button';
@@ -31,11 +32,12 @@ export default function AppealFormFields({ onSubmit }: AppealFormFieldsProps) {
   const [error, setError] = useState<string | null>(null);
 
   const applyAsset = (asset: ImagePicker.ImagePickerAsset) => {
-    setPhoto({
-      uri: asset.uri,
-      name: asset.fileName || `evidence-${Date.now()}.jpg`,
-      type: asset.mimeType || 'image/jpeg',
-    });
+    const problem = checkPickedPhoto(asset, 8);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setPhoto(uploadFileFor(asset, 'evidence'));
   };
 
   const handleTakePhoto = async () => {

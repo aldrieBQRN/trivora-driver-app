@@ -12,6 +12,7 @@ import { DriverNotificationsProvider, useDriverNotifications } from './src/conte
 import NotificationsModal from './src/components/NotificationsModal';
 import { ToastProvider } from './src/components/Toast';
 import OfflineBanner from './src/components/OfflineBanner';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import { COLORS } from './src/constants/theme';
 
 const DRIVER_ONBOARDING_STORAGE_KEY = '@trivora_driver_onboarding_done';
@@ -374,25 +375,27 @@ function DriverAppNavigator() {
 
 export default function App() {
   return (
-    <View style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <NetworkProvider>
-          <ToastProvider>
-            <DriverAuthProvider>
-              <DriverNotificationsProvider>
-                <DriverShiftProvider>
-                  <QrSessionProvider>
-                    <ManualRideProvider>
-                      <DriverAppNavigator />
-                    </ManualRideProvider>
-                  </QrSessionProvider>
-                </DriverShiftProvider>
-              </DriverNotificationsProvider>
-            </DriverAuthProvider>
-          </ToastProvider>
-        </NetworkProvider>
-      </SafeAreaProvider>
-    </View>
+    <ErrorBoundary>
+      <View style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <NetworkProvider>
+            <ToastProvider>
+              <DriverAuthProvider>
+                <DriverNotificationsProvider>
+                  <DriverShiftProvider>
+                    <QrSessionProvider>
+                      <ManualRideProvider>
+                        <DriverAppNavigator />
+                      </ManualRideProvider>
+                    </QrSessionProvider>
+                  </DriverShiftProvider>
+                </DriverNotificationsProvider>
+              </DriverAuthProvider>
+            </ToastProvider>
+          </NetworkProvider>
+        </SafeAreaProvider>
+      </View>
+    </ErrorBoundary>
   );
 }
 

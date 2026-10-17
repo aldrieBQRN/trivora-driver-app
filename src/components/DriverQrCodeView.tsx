@@ -2,7 +2,6 @@ import React, { useMemo } from 'react';
 import { View, StyleSheet, Platform, ViewStyle, Linking } from 'react-native';
 import Svg, { Rect, Path } from 'react-native-svg';
 import QRCode from 'qrcode';
-import { jsPDF } from 'jspdf';
 
 interface DriverQrCodeViewProps {
   value: string;
@@ -110,6 +109,7 @@ export async function downloadQrPdf(
   } = options;
 
   if (Platform.OS === 'web' && typeof document !== 'undefined') {
+    const { jsPDF } = require('jspdf');
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',

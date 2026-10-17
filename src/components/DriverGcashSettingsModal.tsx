@@ -21,6 +21,7 @@ import ConfirmModal from './ConfirmModal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useToast } from './Toast';
 import { driverApi } from '../services/api';
+import { checkPickedPhoto, uploadFileFor } from '../utils/uploadCheck';
 import { DriverGcashQrStatus } from '../types';
 
 interface DriverGcashSettingsModalProps {
@@ -166,6 +167,11 @@ export default function DriverGcashSettingsModal({
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
+        const problem = checkPickedPhoto(result.assets[0]);
+        if (problem) {
+          showToast(problem, 'info');
+          return;
+        }
         setPickedImage(result.assets[0]);
       }
     } catch {
@@ -183,13 +189,7 @@ export default function DriverGcashSettingsModal({
 
     setSaving(true);
     try {
-      const file = pickedImage
-        ? {
-            uri: pickedImage.uri,
-            name: pickedImage.fileName || `gcash-qr-${Date.now()}.jpg`,
-            type: pickedImage.mimeType || 'image/jpeg',
-          }
-        : null;
+      const file = pickedImage ? uploadFileFor(pickedImage, 'gcash-qr') : null;
 
       const res = await driverApi.uploadGcashQr(file, gcashName.trim(), gcashNumber.trim());
       showToast('GCash settings updated successfully.');
