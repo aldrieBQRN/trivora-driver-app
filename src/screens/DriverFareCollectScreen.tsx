@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { useDriverAuth } from '../context/DriverAuthContext';
-import { Check, Banknote, Smartphone, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react-native';
+import { Check, Banknote, Smartphone, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import Button from '../components/Button';
 import { useToast } from '../components/Toast';
 import { driverApi } from '../services/api';
@@ -28,7 +28,6 @@ export default function DriverFareCollectScreen() {
   const [changeAmount, setChangeAmount] = useState<number | null>(activeBooking?.paymentChangeAmount ?? null);
   const [submitting, setSubmitting] = useState(false);
   const [manualGcashRef, setManualGcashRef] = useState('');
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [driverGcash, setDriverGcash] = useState<DriverGcashQrStatus | null>(null);
   // Until the QR lookup finishes, show a loader — never the "no QR" warning for a QR that is
   // simply still loading.
@@ -113,23 +112,6 @@ export default function DriverFareCollectScreen() {
       showToast(err?.message || 'Could not confirm GCash payment.', 'info');
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  const handleManualRefresh = async () => {
-    if (!activeBooking || !driver) return;
-    setIsRefreshing(true);
-    try {
-      const res = await driverApi.getActiveBooking(driver.id, activeBooking.id);
-      if (res?.booking) {
-        if (res.booking.payment_status) setPaymentStatus(res.booking.payment_status);
-        if (res.booking.payment_reference) setPaymentReference(res.booking.payment_reference);
-        showToast('Payment status updated.');
-      }
-    } catch {
-      showToast('Could not refresh status.', 'info');
-    } finally {
-      setIsRefreshing(false);
     }
   };
 
@@ -269,21 +251,6 @@ export default function DriverFareCollectScreen() {
               onChangeText={setManualGcashRef}
               keyboardType="numeric"
             />
-
-            <View style={styles.statusRow}>
-              <ActivityIndicator size="small" color={COLORS.primary} />
-              <Text style={styles.statusText}>Waiting for payment confirmation</Text>
-              <TouchableOpacity
-                style={styles.refreshBtn}
-                onPress={handleManualRefresh}
-                disabled={isRefreshing}
-                activeOpacity={0.7}
-                accessibilityLabel="Check payment status"
-              >
-                <RefreshCw size={14} color={COLORS.primary} />
-                <Text style={styles.refreshText}>{isRefreshing ? 'Checking…' : 'Check'}</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         )}
       </ScrollView>
@@ -613,34 +580,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     color: COLORS.textPrimary,
     backgroundColor: COLORS.surface,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    padding: SPACING.sm + 2,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.primaryTint,
-  },
-  statusText: {
-    ...TYPOGRAPHY.bodySmall,
-    fontWeight: '600',
-    color: COLORS.primary,
-    flex: 1,
-  },
-  refreshBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: 6,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surface,
-  },
-  refreshText: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '700',
-    color: COLORS.primary,
   },
   footer: {
     padding: SPACING.md,

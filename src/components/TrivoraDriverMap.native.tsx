@@ -35,6 +35,9 @@ const MAX_FIT_ROUTE_POINTS = 40;
  * these margins are tighter than EDGE_MARGIN (which Home/other ride screens keep using). */
 const TRIP_PIN_HEIGHT = 36;
 const TRIP_FIT_MARGIN = 16;
+/** Extra bottom room for the driver + target fit on a tilted (pitched) map: the driver sits at the
+ * bottom of the rotated frame, and perspective pushes that edge toward the bottom panel. */
+const PITCHED_BOTTOM_EXTRA = 56;
 /** Never let the trip padding leave less than this much map height to fit the route into. */
 const TRIP_MIN_FIT_HEIGHT = 120;
 /** Home map zoom: visible span in degrees (~0.004° ≈ 450 m; was 0.01° ≈ 1.1 km), converted to a
@@ -227,7 +230,12 @@ export default function TrivoraDriverMapNative({
             { lat: driverLocation.lat, lng: driverLocation.lng },
           ]),
           // Driver at the bottom, the pick-up/drop-off they're heading to at the top.
-          { padding: edgePadding, pitch: effectivePitch, bearing: bearingBetween(driverLocation, target), duration }
+          {
+            padding: effectivePitch > 0 ? { ...edgePadding, bottom: edgePadding.bottom + PITCHED_BOTTOM_EXTRA } : edgePadding,
+            pitch: effectivePitch,
+            bearing: bearingBetween(driverLocation, target),
+            duration,
+          }
         );
       }
       lastFramedRef.current = driverLocation ? { lat: driverLocation.lat, lng: driverLocation.lng } : null;
@@ -502,7 +510,9 @@ export default function TrivoraDriverMapNative({
           <Marker id="driver" lngLat={[driverLocation.lng, driverLocation.lat]} anchor="center">
             <View
               style={[
-                { transform: [{ rotate: `${(driverLocation.heading || 0) - mapBearing}deg` }] },
+                // Upright on the ride screens (their map is turned so the trip runs bottom-to-top);
+                // Home turns it with the GPS heading, corrected for any map rotation.
+                { transform: [{ rotate: `${target ? 0 : (driverLocation.heading || 0) - mapBearing}deg` }] },
                 !isOnline && styles.markerOffline,
               ]}
             >

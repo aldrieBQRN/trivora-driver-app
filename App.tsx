@@ -160,7 +160,7 @@ function DriverAppNavigator() {
   if (isRestoring) {
     return (
       <View style={[styles.container, { backgroundColor: '#FFFFFF' }]}>
-        <StatusBar style="dark" backgroundColor="#FFFFFF" />
+        <StatusBar style="dark" />
       </View>
     );
   }
@@ -359,7 +359,10 @@ function DriverAppNavigator() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={ownsTopInset ? [] : ['top']}>
-      <StatusBar style="dark" backgroundColor={COLORS.background} />
+      {/* No backgroundColor: with edge-to-edge the status bar is always transparent over the page,
+          and passing a colour (unsupported there) left a black band above plain pages such as
+          Collect Payment. */}
+      <StatusBar style="dark" />
       <OfflineBanner />
       <View style={styles.container}>
         <View style={styles.screenViewport}>{renderCurrentScreen()}</View>
