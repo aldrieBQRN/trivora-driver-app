@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Modal, ScrollView, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { useDriverNotifications } from '../context/DriverNotificationsContext';
 import {
@@ -85,7 +85,8 @@ export default function NotificationsModal({ visible, onClose }: NotificationsMo
           <View style={styles.header}>
             <View>
               <Text style={styles.title}>Notifications</Text>
-              {unreadCount > 0 && <Text style={styles.unreadLabel}>{unreadCount} unread</Text>}
+              {/* Always shown — reads "0 unread" after Mark all read instead of disappearing */}
+              <Text style={styles.unreadLabel}>{unreadCount} unread</Text>
             </View>
             <View style={styles.headerActions}>
               {unreadCount > 0 && (
@@ -296,6 +297,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   rowTitleRead: {
+    fontFamily: FONT_FAMILY,
     fontWeight: '500',
   },
   rowBody: {

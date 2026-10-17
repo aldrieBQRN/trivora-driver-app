@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import TabHeader from '../components/TabHeader';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useDriverShift } from '../context/DriverShiftContext';
-import { DriverProfile } from '../types';
 import {
   User,
   Truck,
@@ -16,13 +16,11 @@ import {
   ChevronDown,
   Star,
   MapPin,
-  Pencil,
   QrCode,
 } from 'lucide-react-native';
 import EditableAvatar from '../components/EditableAvatar';
 import StatusBadge from '../components/StatusBadge';
 import Button from '../components/Button';
-import EditProfileModal from '../components/EditProfileModal';
 import ConfirmModal from '../components/ConfirmModal';
 import {
   getCachedGcashStatus,
@@ -59,7 +57,6 @@ export default function DriverProfileScreen({
   const { driver, logout, updateProfile, refreshProfile } = useDriverAuth();
   const { isOnline, averageRating, totalCompletedRides } = useDriverShift();
   const [expanded, setExpanded] = useState<ExpandableSection>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [gcashStatus, setGcashStatus] = useState<DriverGcashQrStatus | null>(() =>
     driver?.id ? getCachedGcashStatus(driver.id) : null
@@ -86,10 +83,6 @@ export default function DriverProfileScreen({
     setExpanded((prev) => (prev === section ? null : section));
   };
 
-  const handleSaveProfile = (fields: Partial<DriverProfile>) => {
-    updateProfile(fields);
-  };
-
   const handleLogout = () => {
     setShowLogoutConfirm(true);
   };
@@ -110,64 +103,60 @@ export default function DriverProfileScreen({
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Identity header — same plain, non-filled treatment as the Passenger app's own Profile
-          header: asymmetric contact-card layout (avatar beside identity, corner edit action),
-          a hairline divider, then a divided stat row. No banner/card background here — just the
-          page background with a bottom border, not a dark or brand-colored fill. */}
-      <View style={styles.header}>
-        <View style={styles.headerTopRow}>
-          <EditableAvatar
-            name={driver?.name || 'Driver'}
-            imageUri={driver?.avatarUrl}
-            size={60}
-            tone="driver"
-            onPhotoChanged={(url) => updateProfile({ avatarUrl: url || undefined })}
-          />
+      {/* Navy tab header (same as Home's), bled out of the scroll padding; the identity card sits
+          on its curve. */}
+      <View style={styles.tabHeaderBleed}>
+        <TabHeader title="Profile">
+          {/* Identity card — same treatment as the Passenger app's own Profile: asymmetric
+              contact-card layout (avatar beside identity, corner edit action), a hairline divider,
+              then a divided stat row. */}
+          <View style={styles.header}>
+            <View style={styles.headerTopRow}>
+              <EditableAvatar
+                name={driver?.name || 'Driver'}
+                imageUri={driver?.avatarUrl}
+                size={60}
+                tone="driver"
+                onPhotoChanged={(url) => updateProfile({ avatarUrl: url || undefined })}
+              />
 
-          <View style={styles.identityCol}>
-            <Text style={styles.driverName} numberOfLines={1}>{driver?.name || '—'}</Text>
-            <StatusBadge
-              label={isOnline ? 'Online' : 'Offline'}
-              tone={isOnline ? 'success' : 'neutral'}
-              size="sm"
-              style={styles.statusBadge}
-            />
-            <View style={styles.zoneRow}>
-              <MapPin size={12} color={COLORS.textMuted} />
-              <Text style={styles.zoneText} numberOfLines={1}>
-                {driver?.tricycle?.plateNumber ? `Plate: ${driver.tricycle.plateNumber}` : 'Nasugbu, Batangas'}
-              </Text>
+              <View style={styles.identityCol}>
+                <Text style={styles.driverName} numberOfLines={1}>{driver?.name || '—'}</Text>
+                <StatusBadge
+                  label={isOnline ? 'Online' : 'Offline'}
+                  tone={isOnline ? 'success' : 'neutral'}
+                  size="sm"
+                  style={styles.statusBadge}
+                />
+                <View style={styles.zoneRow}>
+                  <MapPin size={12} color={COLORS.textMuted} />
+                  <Text style={styles.zoneText} numberOfLines={1}>
+                    {driver?.tricycle?.plateNumber ? `Plate: ${driver.tricycle.plateNumber}` : 'Nasugbu, Batangas'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.headerDivider} />
+
+            {/* Same divided stat-row language as the Earnings hero card, so a driver's rating and
+                ride count read with the same visual weight wherever they appear in the app. */}
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <View style={styles.statValueRow}>
+                  <Star size={14} color={COLORS.amber} fill={COLORS.amber} />
+                  <Text style={styles.statValue}>{averageRating != null ? averageRating.toFixed(2) : 'Not Rated'}</Text>
+                </View>
+                <Text style={styles.statLabel}>Rating</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{totalCompletedRides}</Text>
+                <Text style={styles.statLabel}>Total Rides</Text>
+              </View>
             </View>
           </View>
-
-          <TouchableOpacity
-            style={styles.editIconBtn}
-            onPress={() => setShowEditModal(true)}
-            activeOpacity={0.8}
-            accessibilityLabel="Edit profile"
-          >
-            <Pencil size={15} color={COLORS.primary} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.headerDivider} />
-
-        {/* Same divided stat-row language as the Earnings hero card, so a driver's rating and
-            ride count read with the same visual weight wherever they appear in the app. */}
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <View style={styles.statValueRow}>
-              <Star size={14} color={COLORS.amber} fill={COLORS.amber} />
-              <Text style={styles.statValue}>{averageRating != null ? averageRating.toFixed(2) : 'Not Rated'}</Text>
-            </View>
-            <Text style={styles.statLabel}>Rating</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{totalCompletedRides}</Text>
-            <Text style={styles.statLabel}>Total Rides</Text>
-          </View>
-        </View>
+        </TabHeader>
       </View>
 
       {/* Driver Info */}
@@ -186,6 +175,11 @@ export default function DriverProfileScreen({
           <DetailRow label="License Number" value={driver?.licenseNumber || '—'} />
           <DetailRow label="Mobile Number" value={driver?.mobile || '—'} />
           <DetailRow label="Email Address" value={driver?.email || '—'} last />
+          {/* Read-only: these come from the driver's TMO registration (there is no driver profile
+              update endpoint). Only the profile photo is editable, from the avatar above. */}
+          <Text style={styles.detailNote}>
+            These details come from your TMO registration. To change them, visit the Municipal Tricycle Office.
+          </Text>
         </View>
       )}
 
@@ -269,13 +263,6 @@ export default function DriverProfileScreen({
       )}
 
       <Button label="Log Out" variant="dangerOutline" icon={LogOut} onPress={handleLogout} style={styles.logoutBtn} />
-
-      <EditProfileModal
-        visible={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        driver={driver}
-        onSave={handleSaveProfile}
-      />
 
 
       <ConfirmModal
@@ -371,11 +358,20 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     paddingBottom: 40,
   },
-  header: {
-    paddingBottom: SPACING.lg,
+  // Cancels the scroll content's padding so the navy header runs edge to edge and to the top.
+  tabHeaderBleed: {
+    marginHorizontal: -SPACING.md,
+    marginTop: -SPACING.md,
     marginBottom: SPACING.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+  },
+  // Identity card, on the TabHeader's curve.
+  header: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
+    ...SHADOWS.card,
   },
   headerTopRow: {
     flexDirection: 'row',
@@ -403,14 +399,6 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     fontWeight: '700',
-  },
-  editIconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.primaryTint,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   headerDivider: {
     height: 1,
@@ -486,6 +474,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs,
     marginBottom: SPACING.sm,
+  },
+  detailNote: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    paddingTop: SPACING.xs,
+    paddingBottom: SPACING.sm,
   },
   paragraph: {
     ...TYPOGRAPHY.bodySmall,

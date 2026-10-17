@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Check } from 'lucide-react-native';
-import { COLORS, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 
 interface AuthProgressStepsProps {
   currentStep: 1 | 2 | 3;
@@ -86,6 +86,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   labelActive: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.primary,
     fontWeight: '700',
   },

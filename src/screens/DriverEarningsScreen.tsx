@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, LayoutChangeEvent } from 'react-native';
-import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { RideHistoryItem } from '../types';
 import { rideDate } from '../utils/rideDate';
 import { Star, TrendingUp, TrendingDown } from 'lucide-react-native';
-import ScreenHeader from '../components/ScreenHeader';
+import TabHeader from '../components/TabHeader';
 import SectionHeader from '../components/SectionHeader';
 import FilterTabs from '../components/FilterTabs';
 
@@ -239,9 +239,10 @@ export default function DriverEarningsScreen() {
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Earnings" />
-
-      <FilterTabs options={PERIOD_OPTIONS} value={period} onChange={(key) => setPeriod(key as Period)} />
+      {/* Navy tab header (same as Home's); the period switcher sits on its curve. */}
+      <TabHeader title="Earnings">
+        <FilterTabs options={PERIOD_OPTIONS} value={period} onChange={(key) => setPeriod(key as Period)} variant="floating" />
+      </TabHeader>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Total earnings is the one figure that matters most on this screen. */}
@@ -440,6 +441,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   compareValue: {
+    fontFamily: FONT_FAMILY,
     fontWeight: '700',
   },
   perfRow: {
@@ -525,6 +527,7 @@ const styles = StyleSheet.create({
     color: COLORS.textMuted,
   },
   trendDayLabelCurrent: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.primary,
     fontWeight: '700',
   },

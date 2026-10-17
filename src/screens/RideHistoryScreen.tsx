@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, SectionList, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { RideHistoryItem } from '../types';
 import { ChevronRight, Receipt, Star } from 'lucide-react-native';
 import EmptyState from '../components/EmptyState';
-import ScreenHeader from '../components/ScreenHeader';
+import TabHeader from '../components/TabHeader';
 import RouteTimeline from '../components/RouteTimeline';
 import StatusBadge from '../components/StatusBadge';
 import FilterTabs from '../components/FilterTabs';
@@ -21,6 +22,7 @@ const FILTER_OPTIONS = [
 
 export default function RideHistoryScreen() {
   const { historyList } = useDriverShift();
+  const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('All');
   const [selectedItem, setSelectedItem] = useState<RideHistoryItem | null>(null);
 
@@ -40,18 +42,28 @@ export default function RideHistoryScreen() {
   }, [filtered]);
 
   if (selectedItem) {
-    return <DriverRideDetailsScreen item={selectedItem} onBack={() => setSelectedItem(null)} />;
+    // A plain page: it needs its own status-bar gap since this tab runs under it.
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <DriverRideDetailsScreen item={selectedItem} onBack={() => setSelectedItem(null)} />
+      </View>
+    );
   }
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Ride History" />
-
-      <FilterTabs
-        options={FILTER_OPTIONS}
-        value={activeFilter}
-        onChange={(key) => setActiveFilter(key as FilterTab)}
-      />
+      {/* Navy tab header (same as Home's); the filter sits on its curve. */}
+      <TabHeader
+        title="Ride History"
+        subtitle={historyList.length ? `${historyList.length} ${historyList.length === 1 ? 'ride' : 'rides'}` : undefined}
+      >
+        <FilterTabs
+          options={FILTER_OPTIONS}
+          value={activeFilter}
+          onChange={(key) => setActiveFilter(key as FilterTab)}
+          variant="floating"
+        />
+      </TabHeader>
 
       <SectionList
         sections={sections}

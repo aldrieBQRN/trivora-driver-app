@@ -1,7 +1,7 @@
 import React from 'react';
 import { LayoutAnimation, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
-import { COLORS } from '../constants/theme';
+import { COLORS, FONT_FAMILY } from '../constants/theme';
 
 export interface CurvedTab<K extends string> {
   key: K;
@@ -89,6 +89,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primaryTint,
   },
   label: {
+    fontFamily: FONT_FAMILY,
     fontSize: 13,
     fontWeight: '700',
     color: COLORS.primary,

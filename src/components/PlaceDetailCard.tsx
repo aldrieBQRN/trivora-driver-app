@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { X, Check } from 'lucide-react-native';
 import { NearbyPlace } from '../types';
 import { getCategoryDefinition } from '../constants/placeCategories';
-import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import Button from './Button';
 
 interface PlaceDetailCardProps {
@@ -104,6 +104,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
   },
   categoryLabel: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11,
     fontWeight: '600',
     color: COLORS.primary,
@@ -138,6 +139,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   attribution: {
+    fontFamily: FONT_FAMILY,
     fontSize: 10,
     color: COLORS.textMuted,
     marginBottom: SPACING.sm,

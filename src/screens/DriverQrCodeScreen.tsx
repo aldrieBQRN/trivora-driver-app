@@ -12,7 +12,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { DriverQrCodeData } from '../types';
 import {
@@ -918,6 +918,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stepValueText: {
+    fontFamily: FONT_FAMILY,
     fontSize: 22,
     fontWeight: '700',
     color: COLORS.textPrimary,
@@ -954,6 +955,7 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
   },
   presetChipTextSelected: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.textInverse,
     fontWeight: '700',
   },

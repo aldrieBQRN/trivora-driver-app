@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import { PLACE_CATEGORIES, PlaceCategoryDef } from '../constants/placeCategories';
-import { COLORS, RADIUS, SHADOWS, SPACING } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, FONT_FAMILY } from '../constants/theme';
 
 interface PlaceCategoryChipsProps {
   selectedCategory: string;
@@ -102,14 +102,17 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
   label: {
+    fontFamily: FONT_FAMILY,
     fontSize: 13,
     lineHeight: 18,
   },
   labelUnselected: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.textPrimary,
     fontWeight: '500',
   },
   labelSelected: {
+    fontFamily: FONT_FAMILY,
     color: '#FFFFFF',
     fontWeight: '600',
   },

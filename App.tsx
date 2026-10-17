@@ -43,7 +43,11 @@ import DriverManualRideScreen from './src/screens/DriverManualRideScreen';
 
 import { Home, History, ShieldAlert, Wallet, User } from 'lucide-react-native';
 import CurvedTabBar, { CurvedTab } from './src/components/CurvedTabBar';
+import { registerWebFonts } from './src/utils/webFonts';
 import { PendingAccountInfo } from './src/types';
+
+// Web: load the app font in the browser (native builds bundle it via app.json).
+registerWebFonts();
 
 type AuthScreenKey = 'splash' | 'login' | 'forgot_password' | 'verify' | 'register' | 'set_password';
 type PrimaryTab = 'home' | 'trips' | 'violations' | 'earnings' | 'profile';
@@ -330,13 +334,13 @@ function DriverAppNavigator() {
   // map + floating header + insets, so they render outside the padded SafeAreaView below.
   const isFullBleedScreen = isAuthenticated && isMapRideState;
   const isTabBarVisible = isAuthenticated && !isRideFlowActive && pushedScreen === null && !isQrSessionVisible && !isManualRideVisible;
-  // Home and Manual Ride in progress are full-bleed maps whose overlay ScreenHeader already pads
-  // the status bar itself (same as the Passenger Home header) — padding it here too doubled the
-  // gap above the header.
+  // Manual Ride in progress (a full-bleed map) and every primary tab (whose navy header runs up
+  // under the status bar, same as the Passenger app) pad the status bar themselves — padding it
+  // here too would double the gap above the header.
   const ownsTopInset =
     isAuthenticated &&
     !isRideFlowActive &&
-    ((isManualRideVisible && !!manualRide) || (isTabBarVisible && activeTab === 'home'));
+    ((isManualRideVisible && !!manualRide) || isTabBarVisible);
 
   if (isFullBleedScreen) {
     return (

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, LayoutChangeEvent, useWindowDimensions, Animated, Easing } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useDriverShift } from '../context/DriverShiftContext';
@@ -10,7 +11,6 @@ import { useQrSession } from '../context/QrSessionContext';
 import { useManualRide } from '../context/ManualRideContext';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
 import MapLocationNotice from '../components/MapLocationNotice';
-import ScreenHeader from '../components/ScreenHeader';
 import Button from '../components/Button';
 import FloatingIconButton from '../components/FloatingIconButton';
 import Avatar from '../components/Avatar';
@@ -120,6 +120,8 @@ export default function DriverDashboardScreen({
   // centered in the area actually visible below the header.
   const [headerHeight, setHeaderHeight] = useState(0);
   const handleHeaderLayout = (e: LayoutChangeEvent) => setHeaderHeight(e.nativeEvent.layout.height);
+  // The navy header background ends halfway down the Today card, so the card straddles its curve.
+  const [todayCardHeight, setTodayCardHeight] = useState(0);
 
   // The panel's real rendered height is what the map treats as covered (camera padding).
   const [panelHeight, setPanelHeight] = useState(0);
@@ -212,41 +214,97 @@ export default function DriverDashboardScreen({
         <MapLocationNotice isLocating={isLocatingDriver} error={locationError} onRetry={retryLocation} top={headerHeight + 8} />
       )}
 
-      <ScreenHeader
-        variant="overlay"
-        tone="opaque"
-        rounded
+      {/* Light status-bar icons over the navy header (unmounts when another tab/page shows). */}
+      <StatusBar style="light" />
+      {/* Header — same layout as the Passenger app's Home: a brand-navy panel floating over the
+          map with the greeting + current location and alerts + profile, then the Today card. */}
+      <View
+        style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}
         onLayout={handleHeaderLayout}
-        title={`${greeting}, ${firstName}`}
-        subtitle={
-          <View style={styles.headerLocationRow}>
-            <MapPin size={12} color={locationKnown ? COLORS.primary : COLORS.textMuted} strokeWidth={2.4} />
-            <Text style={styles.headerLocation} numberOfLines={1}>
-              {locationKnown ? (locationName || 'Finding your location…') : (locationError ? 'Location unavailable' : 'Finding your location…')}
-            </Text>
-          </View>
-        }
-        leftSlot={
-          <TouchableOpacity onPress={onOpenProfile} activeOpacity={0.8} accessibilityLabel="Open profile">
-            <View>
-              <Avatar name={driver?.name || 'Juan Dela Cruz'} imageUri={driver?.avatarUrl} tone="driver" size={40} />
-              {/* Live work status at a glance, on the avatar */}
-              <View style={[styles.avatarDot, isOnline ? styles.avatarDotOnline : styles.avatarDotOffline]} />
+        pointerEvents="box-none"
+      >
+        <View style={[styles.headerBg, { bottom: todayCardHeight / 2 }]} pointerEvents="none" />
+        <View style={styles.headerRow}>
+          <View style={styles.headerTextCol}>
+            <Text style={styles.headerGreeting} numberOfLines={1}>{greeting}, {firstName}</Text>
+            {/* Where the driver is right now — the real reverse-geocoded GPS address. */}
+            <View style={styles.headerLocationRow}>
+              <MapPin size={12} color={COLORS.textInverse} strokeWidth={2.4} />
+              <Text style={styles.headerLocation} numberOfLines={1}>
+                {locationKnown ? (locationName || 'Finding your location…') : (locationError ? 'Location unavailable' : 'Finding your location…')}
+              </Text>
             </View>
-          </TouchableOpacity>
-        }
-        rightSlot={
-          <FloatingIconButton
-            onPress={openCenter}
-            hasBadge={hasUnread}
-            accessibilityLabel="Notifications"
-            size={40}
-            style={styles.headerIconBtn}
-          >
-            <Bell size={17} color={COLORS.textPrimary} />
-          </FloatingIconButton>
-        }
-      />
+          </View>
+          <View style={styles.headerActions}>
+            <FloatingIconButton
+              onPress={openCenter}
+              hasBadge={hasUnread}
+              accessibilityLabel="Notifications"
+              size={34}
+              style={styles.headerIconBtn}
+            >
+              <Bell size={15} color={COLORS.primary} />
+            </FloatingIconButton>
+            <TouchableOpacity onPress={onOpenProfile} activeOpacity={0.8} accessibilityLabel="Open profile">
+              <View>
+                {/* "passenger" tone = navy initials; the header style makes its fill solid white like the bell. */}
+                <Avatar name={driver?.name || 'Juan Dela Cruz'} imageUri={driver?.avatarUrl} tone="passenger" size={40} style={styles.headerAvatar} />
+                {/* Live work status at a glance, on the avatar */}
+                <View style={[styles.avatarDot, isOnline ? styles.avatarDotOnline : styles.avatarDotOffline]} />
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Today — one grouped strip of three figures; earnings and rides open their screens. It
+            sits on the header's curve, like the Passenger app's ride card. */}
+        <View style={[styles.todayCard, isWide && styles.todayCardWide]} onLayout={(e) => setTodayCardHeight(e.nativeEvent.layout.height)}>
+          <Text style={styles.todayEyebrow}>Today</Text>
+          <View style={styles.statsGroup}>
+            <TouchableOpacity
+              style={styles.stat}
+              onPress={onOpenEarnings}
+              activeOpacity={0.6}
+              accessibilityRole="button"
+              accessibilityLabel={`Today's earnings ₱${todayEarnings.toFixed(2)}. Open earnings`}
+            >
+              <Text style={[styles.statValue, isCompact && styles.statValueCompact]} numberOfLines={1} adjustsFontSizeToFit>
+                ₱{todayEarnings.toFixed(2)}
+              </Text>
+              <View style={styles.statLabelRow}>
+                <Wallet size={12} color={COLORS.textSecondary} />
+                <Text style={styles.statLabel}>Earnings</Text>
+                <ChevronRight size={12} color={COLORS.textMuted} />
+              </View>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <TouchableOpacity
+              style={styles.stat}
+              onPress={onOpenTrips}
+              activeOpacity={0.6}
+              accessibilityRole="button"
+              accessibilityLabel={`${completedTripsCount} completed rides today. Open ride history`}
+            >
+              <Text style={[styles.statValue, isCompact && styles.statValueCompact]}>{completedTripsCount}</Text>
+              <View style={styles.statLabelRow}>
+                <CheckCircle2 size={12} color={COLORS.textSecondary} />
+                <Text style={styles.statLabel}>Rides</Text>
+                <ChevronRight size={12} color={COLORS.textMuted} />
+              </View>
+            </TouchableOpacity>
+            <View style={styles.statDivider} />
+            <View style={styles.stat} accessibilityLabel={`Rating ${averageRating != null ? averageRating.toFixed(1) : 'not yet rated'}`}>
+              <Text style={[styles.statValue, isCompact && styles.statValueCompact]}>
+                {averageRating != null ? averageRating.toFixed(1) : '—'}
+              </Text>
+              <View style={styles.statLabelRow}>
+                <Star size={12} color={COLORS.warning} fill={COLORS.warning} />
+                <Text style={styles.statLabel}>Rating</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
 
       {qrSession && (
         <TouchableOpacity
@@ -454,53 +512,6 @@ export default function DriverDashboardScreen({
           </TouchableOpacity>
         )}
 
-        {/* Today — one grouped strip of three figures; earnings and rides open their screens */}
-        <View style={styles.todayBlock}>
-          <Text style={styles.eyebrow}>Today</Text>
-          <View style={styles.statsGroup}>
-            <TouchableOpacity
-              style={styles.stat}
-              onPress={onOpenEarnings}
-              activeOpacity={0.6}
-              accessibilityRole="button"
-              accessibilityLabel={`Today's earnings ₱${todayEarnings.toFixed(2)}. Open earnings`}
-            >
-              <Text style={[styles.statValue, isCompact && styles.statValueCompact]} numberOfLines={1} adjustsFontSizeToFit>
-                ₱{todayEarnings.toFixed(2)}
-              </Text>
-              <View style={styles.statLabelRow}>
-                <Wallet size={12} color={COLORS.textSecondary} />
-                <Text style={styles.statLabel}>Earnings</Text>
-                <ChevronRight size={12} color={COLORS.textMuted} />
-              </View>
-            </TouchableOpacity>
-            <View style={styles.statDivider} />
-            <TouchableOpacity
-              style={styles.stat}
-              onPress={onOpenTrips}
-              activeOpacity={0.6}
-              accessibilityRole="button"
-              accessibilityLabel={`${completedTripsCount} completed rides today. Open ride history`}
-            >
-              <Text style={[styles.statValue, isCompact && styles.statValueCompact]}>{completedTripsCount}</Text>
-              <View style={styles.statLabelRow}>
-                <CheckCircle2 size={12} color={COLORS.textSecondary} />
-                <Text style={styles.statLabel}>Rides</Text>
-                <ChevronRight size={12} color={COLORS.textMuted} />
-              </View>
-            </TouchableOpacity>
-            <View style={styles.statDivider} />
-            <View style={styles.stat} accessibilityLabel={`Rating ${averageRating != null ? averageRating.toFixed(1) : 'not yet rated'}`}>
-              <Text style={[styles.statValue, isCompact && styles.statValueCompact]}>
-                {averageRating != null ? averageRating.toFixed(1) : '—'}
-              </Text>
-              <View style={styles.statLabelRow}>
-                <Star size={12} color={COLORS.warning} fill={COLORS.warning} />
-                <Text style={styles.statLabel}>Rating</Text>
-              </View>
-            </View>
-          </View>
-        </View>
       </Animated.View>
 
     </View>
@@ -513,6 +524,44 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   flex: { flex: 1 },
+  header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.md,
+  },
+  // Navy panel behind the header, floating over the map with rounded bottom corners; its bottom
+  // edge is set at runtime to the Today card's vertical centre.
+  headerBg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.primary,
+    borderBottomLeftRadius: RADIUS.xxl,
+    borderBottomRightRadius: RADIUS.xxl,
+    ...SHADOWS.md,
+    // No Android elevation: it would lift this layer above the header row (elevation outranks
+    // render order there). The iOS shadow still applies.
+    elevation: 0,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  headerGreeting: {
+    ...TYPOGRAPHY.h3,
+    fontWeight: '700',
+    color: COLORS.textInverse,
+  },
   headerLocationRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -521,8 +570,40 @@ const styles = StyleSheet.create({
   },
   headerLocation: {
     ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
+    color: 'rgba(255,255,255,0.75)',
     flexShrink: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  // Border on the avatar itself (not a wrapper ring), so no seam shows between two circles.
+  headerAvatar: {
+    backgroundColor: COLORS.background,
+    borderWidth: 2,
+    borderColor: COLORS.background,
+  },
+  // White card on the header's curve holding the Today strip.
+  todayCard: {
+    gap: SPACING.xs,
+    paddingTop: SPACING.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingBottom: SPACING.sm,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.background,
+    ...SHADOWS.card,
+  },
+  todayCardWide: {
+    alignSelf: 'center',
+    width: PANEL_MAX_WIDTH - SPACING.md * 2,
+  },
+  todayEyebrow: {
+    ...TYPOGRAPHY.label,
+    color: COLORS.textMuted,
+    paddingHorizontal: SPACING.xs,
   },
   actionRow: { flexDirection: 'row', gap: SPACING.sm },
   qrBar: {
@@ -558,10 +639,10 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.72)',
     marginTop: 1,
   },
+  // Solid white on the navy header.
   headerIconBtn: {
-    backgroundColor: COLORS.backgroundSubtle,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
+    backgroundColor: COLORS.background,
+    borderWidth: 0,
     shadowOpacity: 0,
     elevation: 0,
   },
@@ -594,10 +675,6 @@ const styles = StyleSheet.create({
     right: undefined,
     width: PANEL_MAX_WIDTH,
     marginLeft: -PANEL_MAX_WIDTH / 2,
-  },
-  eyebrow: {
-    ...TYPOGRAPHY.label,
-    color: COLORS.textMuted,
   },
   heroSubtitle: {
     ...TYPOGRAPHY.bodySmall,
@@ -734,14 +811,11 @@ const styles = StyleSheet.create({
   heroDotOnline: { backgroundColor: COLORS.success },
   heroDotOffline: { backgroundColor: COLORS.textMuted },
   heroDotNoSignal: { backgroundColor: COLORS.amber },
+  // Sits directly on the white Today card (no inner box of its own).
   statsGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: SPACING.sm + 4,
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.backgroundSubtle,
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
+    paddingVertical: SPACING.xs,
   },
   stat: {
     flex: 1,
@@ -754,9 +828,6 @@ const styles = StyleSheet.create({
   statLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   statLabel: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
   statDivider: { width: 1, alignSelf: 'stretch', backgroundColor: COLORS.border },
-  todayBlock: {
-    gap: SPACING.sm,
-  },
   avatarDot: {
     position: 'absolute',
     right: -1,
@@ -765,7 +836,7 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: COLORS.background,
+    borderColor: COLORS.primary, // cut out against the navy header
   },
   avatarDotOnline: { backgroundColor: COLORS.success },
   avatarDotOffline: { backgroundColor: COLORS.textMuted },

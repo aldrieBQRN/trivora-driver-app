@@ -106,7 +106,7 @@ export default function DriverEnRoutePickupScreen() {
         driverLocation={driverLocation}
         isOnline
         showCompass
-        mapVariant="liberty"
+        mapVariant="bright"
         pitch={50}
         target={
           pickupLat != null && pickupLng != null

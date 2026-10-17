@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 
 export interface FilterTabOption {
   key: string;
@@ -11,6 +11,8 @@ interface FilterTabsProps {
   options: FilterTabOption[];
   value: string;
   onChange: (key: string) => void;
+  /** 'floating': a white card with no outer padding, for sitting on a TabHeader's curve. */
+  variant?: 'default' | 'floating';
 }
 
 /**
@@ -24,10 +26,11 @@ interface FilterTabsProps {
  * space below the filter is intentionally left to the content below it (its existing top padding
  * already supplies the matching gap), so this only reserves the "header to filter" side.
  */
-export default function FilterTabs({ options, value, onChange }: FilterTabsProps) {
+export default function FilterTabs({ options, value, onChange, variant = 'default' }: FilterTabsProps) {
+  const isFloating = variant === 'floating';
   return (
-    <View style={styles.container}>
-      <View style={styles.track}>
+    <View style={!isFloating && styles.container}>
+      <View style={[styles.track, isFloating && styles.trackFloating]}>
         {options.map((option) => {
           const isActive = option.key === value;
           return (
@@ -59,6 +62,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
+  trackFloating: {
+    backgroundColor: COLORS.background,
+    ...SHADOWS.card,
+  },
   tab: {
     flex: 1,
     paddingVertical: 8,
@@ -73,6 +80,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   tabTextActive: {
+    fontFamily: FONT_FAMILY,
     color: '#FFFFFF',
     fontWeight: '700',
   },

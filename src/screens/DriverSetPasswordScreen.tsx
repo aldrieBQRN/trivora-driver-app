@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { driverApi, mapAuthResponseToDriverProfile } from '../services/api';
 import { DriverProfile, PendingAccountInfo } from '../types';
@@ -310,6 +310,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   termsLink: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.primary,
     fontWeight: '700',
   },

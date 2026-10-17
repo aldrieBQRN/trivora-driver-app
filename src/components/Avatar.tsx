@@ -1,6 +1,6 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { COLORS } from '../constants/theme';
+import { COLORS, FONT_FAMILY } from '../constants/theme';
 
 export type AvatarTone = 'driver' | 'passenger' | 'inverse';
 
@@ -52,7 +52,7 @@ export default function Avatar({ name, size = 40, tone = 'passenger', imageUri, 
         style,
       ]}
     >
-      <Text style={[styles.text, { color: colors.text, fontSize: size * 0.36 }]}>
+      <Text style={[styles.text, { fontFamily: FONT_FAMILY, color: colors.text, fontSize: size * 0.36 }]}>
         {getInitials(name)}
       </Text>
     </View>
@@ -65,6 +65,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   text: {
+    fontFamily: FONT_FAMILY,
     fontWeight: '700',
   },
 });

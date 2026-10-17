@@ -9,7 +9,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { ShieldAlert, RefreshCw } from 'lucide-react-native';
-import { COLORS, SPACING, TYPOGRAPHY, RADIUS } from '../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, RADIUS, FONT_FAMILY } from '../constants/theme';
 
 interface Props {
   children: ReactNode;
@@ -126,6 +126,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   title: {
+    fontFamily: FONT_FAMILY,
     fontSize: 22,
     fontWeight: '700',
     color: '#0F172A',
@@ -133,6 +134,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitle: {
+    fontFamily: FONT_FAMILY,
     fontSize: 14,
     color: '#64748B',
     textAlign: 'center',
@@ -149,6 +151,7 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
   },
   errorLabel: {
+    fontFamily: FONT_FAMILY,
     fontSize: 12,
     fontWeight: '700',
     color: '#38BDF8',
@@ -180,6 +183,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   restartButtonText: {
+    fontFamily: FONT_FAMILY,
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',

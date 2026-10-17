@@ -87,7 +87,9 @@ export default function TrivoraDriverMapWeb({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
-  const effectiveVariant: MapVariant = mapVariant ?? (pitch && pitch > 0 ? 'liberty' : 'bright');
+  // Flat 'bright' by default: 'liberty' draws 3D buildings, which the app doesn't use (ride
+  // screens still tilt via their own `pitch`, just without extruded buildings).
+  const effectiveVariant: MapVariant = mapVariant ?? 'bright';
   const effectiveMapStyle = mapStyleUrl ?? MAP_STYLES[effectiveVariant];
   const effectivePitch = pitch ?? (effectiveVariant === 'liberty' ? ACTIVE_RIDE_PITCH : TOP_DOWN_PITCH);
 

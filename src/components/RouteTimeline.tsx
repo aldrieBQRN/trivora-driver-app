@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { MapPin } from 'lucide-react-native';
-import { COLORS, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 
 interface StopProps {
   label: string;
@@ -128,6 +128,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   rowValueCompact: {
+    fontFamily: FONT_FAMILY,
     fontWeight: '700',
   },
   meta: {

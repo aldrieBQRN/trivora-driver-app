@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, LayoutChangeEvent, Modal, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, CheckCircle2, ChevronRight, Minus, Plus, Satellite, SignalLow, AlertCircle, Search, MapPinned, Banknote, Smartphone, User } from 'lucide-react-native';
-import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useManualRide, toManualRideError, ManualRideError } from '../context/ManualRideContext';
 import { useQrSession } from '../context/QrSessionContext';
 import { useDriverShift } from '../context/DriverShiftContext';
@@ -516,7 +516,7 @@ function ManualRideInProgress({ ride }: { ride: ManualRide }) {
         driverLocation={driverLocation}
         isOnline
         showCompass
-        mapVariant="liberty"
+        mapVariant="bright"
         pitch={50}
         target={{ lat: dest.lat, lng: dest.lng, label: dest.name, kind: 'dropoff' }}
         routeCoordinates={route?.coordinates ?? []}
@@ -636,7 +636,7 @@ const styles = StyleSheet.create({
   pickupDot: { width: 11, height: 11, borderRadius: 6, borderWidth: 3, borderColor: COLORS.primary, backgroundColor: COLORS.background },
   caption: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
   value: { ...TYPOGRAPHY.bodyLarge, color: COLORS.textPrimary, marginTop: 2 },
-  placeholder: { color: COLORS.textMuted, fontWeight: '400' },
+  placeholder: { fontFamily: FONT_FAMILY, color: COLORS.textMuted, fontWeight: '400' },
   gpsLine: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 },
   gpsText: { ...TYPOGRAPHY.caption, fontWeight: '600' },
   gpsOk: { color: COLORS.success },

@@ -7,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 
 interface FormFieldProps {
   label: string;
@@ -82,6 +82,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.dangerLight,
   },
   input: {
+    fontFamily: FONT_FAMILY,
     flex: 1,
     fontSize: 14,
     color: COLORS.textPrimary,

@@ -114,7 +114,9 @@ export default function TrivoraDriverMapNative({
   // Map style and camera pitch presentation:
   // Active ride screens (en route to pickup, in transit to destination, active manual ride) use OpenFreeMap Liberty in 3D pitched mode (~50°).
   // Home, pin location, dispatch, and review screens use OpenFreeMap Bright in 2D top-down mode (0°).
-  const effectiveVariant: MapVariant = mapVariant ?? (pitch && pitch > 0 ? 'liberty' : 'bright');
+  // Flat 'bright' by default: 'liberty' draws 3D buildings, which the app doesn't use (ride
+  // screens still tilt via their own `pitch`, just without extruded buildings).
+  const effectiveVariant: MapVariant = mapVariant ?? 'bright';
   const effectiveMapStyle = mapStyleUrl ?? MAP_STYLES[effectiveVariant];
   const effectivePitch = pitch ?? (effectiveVariant === 'liberty' ? ACTIVE_RIDE_PITCH : TOP_DOWN_PITCH);
 

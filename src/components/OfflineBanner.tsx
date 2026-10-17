@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WifiOff, Wifi, Clock } from 'lucide-react-native';
 import { useNetwork } from '../context/NetworkContext';
 import { useDriverShift } from '../context/DriverShiftContext';
+import { FONT_FAMILY } from '../constants/theme';
 
 export default function OfflineBanner() {
   const { isConnected } = useNetwork();
@@ -134,6 +135,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#16A34A',
   },
   pillText: {
+    fontFamily: FONT_FAMILY,
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
@@ -173,6 +175,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cardTitle: {
+    fontFamily: FONT_FAMILY,
     fontSize: 13,
     fontWeight: '800',
     color: '#0F172A',
@@ -189,22 +192,26 @@ const styles = StyleSheet.create({
     borderColor: '#FDE68A',
   },
   timerBadgeText: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11,
     fontWeight: '800',
     fontVariant: ['tabular-nums'],
     color: '#B45309',
   },
   cardSubtitle: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11.5,
     color: '#64748B',
     marginBottom: 4,
   },
   cardCountdown: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11.5,
     color: '#334155',
     fontWeight: '600',
   },
   cardCountdownHighlight: {
+    fontFamily: FONT_FAMILY,
     color: '#D97706',
     fontWeight: '800',
     fontVariant: ['tabular-nums'],

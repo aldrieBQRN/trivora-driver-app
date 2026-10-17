@@ -92,7 +92,7 @@ export default function DriverInTransitScreen() {
         driverLocation={driverLocation}
         isOnline
         showCompass
-        mapVariant="liberty"
+        mapVariant="bright"
         pitch={50}
         // Trip framing: pickup pin + full pickup -> destination route + destination pin, fitted as a
         // whole and NOT refit on the driver's GPS (tripDropoff mode). The driver's tricycle stays

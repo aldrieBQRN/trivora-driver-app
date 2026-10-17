@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, SafeAreaView } from 'react-native';
 import { MapPin } from 'lucide-react-native';
-import { COLORS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import Button from '../components/Button';
 
 interface DriverOnboardingScreenProps {
@@ -58,6 +58,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xl,
   },
   locationText: {
+    fontFamily: FONT_FAMILY,
     fontSize: 12,
     fontWeight: '700',
     color: COLORS.textSecondary,

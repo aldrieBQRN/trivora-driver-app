@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useRef, useState } from 
 import { Animated, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckCircle2, Info } from 'lucide-react-native';
-import { COLORS, RADIUS, SHADOWS, SPACING } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, FONT_FAMILY } from '../constants/theme';
 
 type ToastVariant = 'success' | 'info';
 
@@ -105,6 +105,7 @@ const styles = StyleSheet.create({
     ...SHADOWS.sheet,
   },
   text: {
+    fontFamily: FONT_FAMILY,
     flex: 1,
     fontSize: 13,
     fontWeight: '700',

@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { COLORS, RADIUS } from '../constants/theme';
+import { COLORS, RADIUS, FONT_FAMILY } from '../constants/theme';
 
 export type BadgeTone = 'success' | 'warning' | 'danger' | 'neutral' | 'brand';
 
@@ -51,11 +51,13 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   text: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
   textSm: {
+    fontFamily: FONT_FAMILY,
     fontSize: 10,
     letterSpacing: 0.4,
   },

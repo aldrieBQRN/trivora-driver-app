@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { MessageSquare } from 'lucide-react-native';
 import TrivoraDriverMap from '../components/TrivoraDriverMap';
@@ -274,6 +274,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.danger,
   },
   countdownNumber: {
+    fontFamily: FONT_FAMILY,
     fontSize: 34,
     fontWeight: '900',
     color: '#FFFFFF',

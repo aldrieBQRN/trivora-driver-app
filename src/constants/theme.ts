@@ -135,19 +135,25 @@ export const BUTTONS = {
  * - Nothing below 11px; 12px+ for anything a rider/driver must read at a glance.
  * - Emphasise the value, not its label (e.g. "₱126.00" is bigger than "Total Fare").
  */
+/** App font, bundled by the expo-font config plugin in app.json as one family (weights 400–800),
+ * so `fontWeight` picks the matching file. React Native has no global default font, so every
+ * text style needs it — the TYPOGRAPHY tokens below carry it; raw text styles set it themselves. */
+export const FONT_FAMILY = 'Plus Jakarta Sans';
+
 export const TYPOGRAPHY = {
   /** Reserved for the one dominant figure on a screen — a fare, a total, an amount due. Typography carries the hierarchy instead of a container. */
-  hero: { fontSize: 44, fontWeight: '700' as const, lineHeight: 48, letterSpacing: -0.8 },
-  display: { fontSize: 28, fontWeight: '700' as const, lineHeight: 34, letterSpacing: -0.4 },
-  h1: { fontSize: 22, fontWeight: '700' as const, lineHeight: 28, letterSpacing: -0.2 },
-  h2: { fontSize: 18, fontWeight: '700' as const, lineHeight: 24 },
-  h3: { fontSize: 16, fontWeight: '600' as const, lineHeight: 22 },
-  bodyLarge: { fontSize: 15, fontWeight: '600' as const, lineHeight: 21 },
-  body: { fontSize: 14, fontWeight: '400' as const, lineHeight: 20 },
-  bodySmall: { fontSize: 13, fontWeight: '400' as const, lineHeight: 18 },
-  caption: { fontSize: 12, fontWeight: '500' as const, lineHeight: 16 },
-  micro: { fontSize: 11, fontWeight: '600' as const, lineHeight: 14 },
+  hero: { fontFamily: FONT_FAMILY, fontSize: 44, fontWeight: '700' as const, lineHeight: 48, letterSpacing: -0.8 },
+  display: { fontFamily: FONT_FAMILY, fontSize: 28, fontWeight: '700' as const, lineHeight: 34, letterSpacing: -0.4 },
+  h1: { fontFamily: FONT_FAMILY, fontSize: 22, fontWeight: '700' as const, lineHeight: 28, letterSpacing: -0.2 },
+  h2: { fontFamily: FONT_FAMILY, fontSize: 18, fontWeight: '700' as const, lineHeight: 24 },
+  h3: { fontFamily: FONT_FAMILY, fontSize: 16, fontWeight: '600' as const, lineHeight: 22 },
+  bodyLarge: { fontFamily: FONT_FAMILY, fontSize: 15, fontWeight: '600' as const, lineHeight: 21 },
+  body: { fontFamily: FONT_FAMILY, fontSize: 14, fontWeight: '400' as const, lineHeight: 20 },
+  bodySmall: { fontFamily: FONT_FAMILY, fontSize: 13, fontWeight: '400' as const, lineHeight: 18 },
+  caption: { fontFamily: FONT_FAMILY, fontSize: 12, fontWeight: '500' as const, lineHeight: 16 },
+  micro: { fontFamily: FONT_FAMILY, fontSize: 11, fontWeight: '600' as const, lineHeight: 14 },
   label: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11,
     fontWeight: '600' as const,
     lineHeight: 14,

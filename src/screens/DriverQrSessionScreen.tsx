@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, Users, WifiOff, CheckCircle2, Navigation, UserPlus, AlertCircle, Banknote, Smartphone, Clock, ChevronRight } from 'lucide-react-native';
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useQrSession } from '../context/QrSessionContext';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { useManualRide } from '../context/ManualRideContext';
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
   destLine: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   rowDest: { ...TYPOGRAPHY.bodyLarge, color: COLORS.textPrimary, flex: 1 },
   rowMeta: { ...TYPOGRAPHY.caption, color: COLORS.textSecondary },
-  sourceText: { fontWeight: '600', color: COLORS.textPrimary },
+  sourceText: { fontFamily: FONT_FAMILY, fontWeight: '600', color: COLORS.textPrimary },
   addRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 60, paddingVertical: SPACING.sm, borderTopWidth: 1, borderTopColor: COLORS.borderLight },
   addIcon: { width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: COLORS.primary, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
   addText: { ...TYPOGRAPHY.bodyLarge, fontWeight: '600', color: COLORS.primary },

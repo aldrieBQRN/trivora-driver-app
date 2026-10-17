@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { ViolationCitation } from '../types';
 import { ShieldCheck, ChevronRight, WifiOff } from 'lucide-react-native';
 import EmptyState from '../components/EmptyState';
-import ScreenHeader from '../components/ScreenHeader';
+import TabHeader from '../components/TabHeader';
 import StatusBadge from '../components/StatusBadge';
 import FilterTabs from '../components/FilterTabs';
 import ViolationDetailScreen, { violationTone } from './ViolationDetailScreen';
@@ -26,6 +27,7 @@ interface ViolationsHistoryScreenProps {
 
 export default function ViolationsHistoryScreen({ focusViolationId = null, onFocusHandled }: ViolationsHistoryScreenProps = {}) {
   const { violations, isLoadingViolations, violationsError, refreshViolations } = useDriverShift();
+  const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<FilterTab>('All');
   // Holds only the id, not a snapshot of the violation itself — derived live from `violations`
   // below so that a submitted appeal (which updates that array) is reflected immediately in the
@@ -101,12 +103,27 @@ export default function ViolationsHistoryScreen({ focusViolationId = null, onFoc
   const showLoadError = !isLoadingViolations && violationsError && violations.length === 0;
 
   if (selectedViolation) {
-    return <ViolationDetailScreen violation={selectedViolation} onBack={() => setSelectedViolationId(null)} />;
+    // A plain page: it needs its own status-bar gap since this tab runs under it.
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <ViolationDetailScreen violation={selectedViolation} onBack={() => setSelectedViolationId(null)} />
+      </View>
+    );
   }
 
   return (
     <View style={styles.container}>
-      <ScreenHeader title="Violations" />
+      {/* Navy tab header (same as Home's); once the list has loaded, the filter sits on its curve. */}
+      <TabHeader title="Violations">
+        {!showInitialLoading && !showLoadError ? (
+          <FilterTabs
+            options={FILTER_OPTIONS}
+            value={activeFilter}
+            onChange={(key) => setActiveFilter(key as FilterTab)}
+            variant="floating"
+          />
+        ) : null}
+      </TabHeader>
 
       {showInitialLoading ? (
         <View style={styles.centerFill}>
@@ -123,12 +140,6 @@ export default function ViolationsHistoryScreen({ focusViolationId = null, onFoc
         />
       ) : (
         <>
-          <FilterTabs
-            options={FILTER_OPTIONS}
-            value={activeFilter}
-            onChange={(key) => setActiveFilter(key as FilterTab)}
-          />
-
           {violations.length > 0 && (
             <View style={styles.summaryRow}>
               <View style={styles.summaryItem}>

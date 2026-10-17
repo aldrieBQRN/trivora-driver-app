@@ -8,7 +8,7 @@ import {
   TextInput,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, RADIUS, SHADOWS, SPACING } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, FONT_FAMILY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { Cpu, Smartphone, Radio, ShieldCheck, Check } from 'lucide-react-native';
 import ScreenHeader from '../components/ScreenHeader';
@@ -196,18 +196,21 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   savedHint: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11,
     fontWeight: '600',
     color: COLORS.success,
     textAlign: 'center',
   },
   saveError: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11,
     fontWeight: '600',
     color: COLORS.dangerDark,
     textAlign: 'center',
   },
   sectionLabel: {
+    fontFamily: FONT_FAMILY,
     fontSize: 10,
     fontWeight: '800',
     color: COLORS.textSecondary,
@@ -247,12 +250,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   modeName: {
+    fontFamily: FONT_FAMILY,
     fontSize: 14,
     fontWeight: '800',
     color: COLORS.primary,
     flexShrink: 1,
   },
   modeDesc: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11,
     color: COLORS.textSecondary,
     lineHeight: 16,
@@ -267,16 +272,19 @@ const styles = StyleSheet.create({
     ...SHADOWS.sm,
   },
   formTitle: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11,
     fontWeight: '800',
     color: COLORS.primary,
     letterSpacing: 0.5,
   },
   formDesc: {
+    fontFamily: FONT_FAMILY,
     fontSize: 11,
     color: COLORS.textSecondary,
   },
   input: {
+    fontFamily: FONT_FAMILY,
     backgroundColor: COLORS.surfaceInput,
     paddingHorizontal: SPACING.md,
     paddingVertical: 10,
@@ -301,6 +309,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   diagTitle: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.primary,
     fontSize: 11,
     fontWeight: '900',
@@ -320,12 +329,14 @@ const styles = StyleSheet.create({
     width: '46%',
   },
   gridLabel: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.textSecondary,
     fontSize: 8,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
   gridVal: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.primary,
     fontSize: 12,
     fontWeight: '800',
@@ -338,6 +349,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
   noticeText: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.textSecondary,
     fontSize: 10,
     fontWeight: '500',

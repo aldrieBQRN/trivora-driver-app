@@ -10,7 +10,7 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
+import { COLORS, RADIUS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useNetwork } from '../context/NetworkContext';
 import { driverApi, mapAuthResponseToDriverProfile, getApiBaseUrl } from '../services/api';
@@ -318,11 +318,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   switchLinkText: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.primary,
     fontSize: 12,
     fontWeight: '700',
   },
   switchLinkPrefix: {
+    fontFamily: FONT_FAMILY,
     color: COLORS.textSecondary,
     fontWeight: '400',
   },
