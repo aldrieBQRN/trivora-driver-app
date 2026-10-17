@@ -50,8 +50,8 @@ const sourceLabel = (p: QrSessionPassenger) => (p.source === 'walk_in' ? 'Walk-i
 export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenProps) {
   const { session, busy, startRide, dropOff, removePassenger, endRide, refresh, markPaid } = useQrSession();
   const { isOnline } = useDriverShift();
-  // The app root only pads the top, so this pinned action bar clears the phone's bottom
-  // navigation itself (same rule as Fare Collect).
+  // The app root pads neither inset here: the page pads the status bar itself (so the full-screen
+  // route map can run under it) and this pinned action bar clears the phone's bottom navigation.
   const insets = useSafeAreaInsets();
   const { open: openAddWalkIn } = useManualRide();
   const [pending, setPending] = useState<PendingAction>(null);
@@ -70,7 +70,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
 
   if (!session) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <ScreenHeader title="Ride Session" onBack={onBack} />
         <View style={styles.empty}>
           <Users size={28} color={COLORS.textMuted} />
@@ -162,7 +162,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <ScreenHeader
         title="Ride Session"
         subtitle={isBoarding ? 'Waiting to start' : isComplete ? 'All passengers dropped off' : 'Ride in progress'}

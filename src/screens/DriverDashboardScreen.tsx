@@ -660,6 +660,10 @@ const styles = StyleSheet.create({
     paddingTop: SPACING.lg,
     gap: SPACING.md + 2,
     ...SHADOWS.sheet,
+    // No Android elevation: its shadow falls mostly below the view, so this panel (which sits on
+    // the tab bar) cast a heavy dark band inside the bottom nav. zIndex already keeps it above the
+    // map; the iOS shadow (offset upward) still applies.
+    elevation: 0,
   },
   panelCompact: {
     gap: SPACING.sm + 4,

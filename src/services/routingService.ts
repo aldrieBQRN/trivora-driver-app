@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { haversineKm } from '../utils/geo';
 
 export interface RouteCoordinate {
@@ -35,15 +36,21 @@ function routeCacheKey(origin: RouteCoordinate, destination: RouteCoordinate): s
   return `${round5(origin.lat)},${round5(origin.lng)}|${round5(destination.lat)},${round5(destination.lng)}`;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs: number, headers?: Record<string, string>): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { signal: controller.signal });
+    return await fetch(url, { signal: controller.signal, headers });
   } finally {
     clearTimeout(timer);
   }
 }
+
+// Nominatim's usage policy asks for an identifying User-Agent and rejects requests from apps
+// without one, which left pinned points as bare coordinates on the phone. Browsers block a custom
+// User-Agent, so web sends none (same as the Passenger app).
+const NOMINATIM_HEADERS: Record<string, string> | undefined =
+  Platform.OS === 'web' ? undefined : { 'User-Agent': 'TrivoraDriverApp/1.0 (capstone demo)' };
 
 function buildFallbackRoute(origin: RouteCoordinate, destination: RouteCoordinate): RouteResult {
   const distanceKm = haversineKm(origin, destination);
@@ -220,7 +227,7 @@ export async function searchPlaces(query: string, opts?: { timeoutMs?: number; l
   });
 
   try {
-    const response = await fetchWithTimeout(`${NOMINATIM_SEARCH_URL}?${params.toString()}`, opts?.timeoutMs ?? 5000);
+    const response = await fetchWithTimeout(`${NOMINATIM_SEARCH_URL}?${params.toString()}`, opts?.timeoutMs ?? 5000, NOMINATIM_HEADERS);
     if (!response.ok) throw new Error(`Nominatim HTTP ${response.status}`);
     const data = await response.json();
     if (!Array.isArray(data)) return [];
@@ -257,7 +264,7 @@ export async function reverseGeocodePoint(
     addressdetails: '1',
   });
   try {
-    const response = await fetchWithTimeout(`${NOMINATIM_REVERSE_URL}?${params.toString()}`, opts?.timeoutMs ?? 5000);
+    const response = await fetchWithTimeout(`${NOMINATIM_REVERSE_URL}?${params.toString()}`, opts?.timeoutMs ?? 5000, NOMINATIM_HEADERS);
     if (!response.ok) return null;
     const data = await response.json();
     if (!data || data.error) return null;

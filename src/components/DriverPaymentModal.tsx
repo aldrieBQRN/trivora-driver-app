@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
   },
   quickCashChipActive: {
-    backgroundColor: COLORS.primaryTint,
+    backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
   quickCashText: {
@@ -434,7 +434,7 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
   },
   quickCashTextActive: {
-    color: COLORS.primary,
+    color: COLORS.textInverse,
   },
   changeBox: {
     borderRadius: RADIUS.lg,
@@ -442,8 +442,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   changeBoxSuccess: {
-    backgroundColor: COLORS.successLight,
-    borderColor: COLORS.success,
+    backgroundColor: COLORS.backgroundSubtle,
+    borderColor: COLORS.border,
   },
   changeBoxError: {
     backgroundColor: COLORS.dangerLight,
@@ -455,7 +455,7 @@ const styles = StyleSheet.create({
   },
   changeValue: {
     ...TYPOGRAPHY.h2,
-    color: COLORS.success,
+    color: COLORS.textPrimary,
     marginTop: 2,
   },
   changeValueError: {

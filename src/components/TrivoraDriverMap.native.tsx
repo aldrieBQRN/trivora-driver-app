@@ -89,6 +89,19 @@ function boundsOf(points: { lat: number; lng: number }[]): LngLatBounds {
   return [west, south, east, north];
 }
 
+/** Compass bearing (degrees clockwise from north) from `from` to `to`. Used as the camera
+ * bearing on the booking screens so the trip reads bottom-to-top: the start (pick-up or the
+ * driver's current position) at the bottom, where they're heading at the top. */
+function bearingBetween(from: { lat: number; lng: number }, to: { lat: number; lng: number }) {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const lat1 = toRad(from.lat);
+  const lat2 = toRad(to.lat);
+  const dLng = toRad(to.lng - from.lng);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
 export default function TrivoraDriverMapNative({
   driverLocation,
   isOnline,
@@ -135,6 +148,11 @@ export default function TrivoraDriverMapNative({
   const userMovedRef = useRef(false);
   // Mirrors !userMovedRef for rendering the Focus button's active/paused look.
   const [isFollowing, setIsFollowing] = useState(true);
+  // The map's current rotation: the tricycle marker is a screen-space view, so its heading
+  // rotation must subtract it to keep pointing the right way on a rotated map.
+  const [mapBearing, setMapBearing] = useState(
+    target && tripDropoff ? bearingBetween(target, tripDropoff) : 0
+  );
 
   // Derived from the caller's actual header/bottom-sheet heights (not a guessed geographic
   // offset) — used as the camera padding, so a target stays inside the visible (non-overlaid)
@@ -188,7 +206,12 @@ export default function TrivoraDriverMapNative({
             if (i % step === 0 || i === routeCoordinates.length - 1) points.push({ lat: c.lat, lng: c.lng });
           });
         }
-        cameraRef.current.fitBounds(boundsOf(points), { padding: tripFitPadding, pitch: effectivePitch, duration });
+        cameraRef.current.fitBounds(boundsOf(points), {
+          padding: tripFitPadding,
+          pitch: effectivePitch,
+          bearing: bearingBetween(target, tripDropoff),
+          duration,
+        });
         lastFramedRef.current = driverLocation ? { lat: driverLocation.lat, lng: driverLocation.lng } : null;
         return;
       }
@@ -203,7 +226,8 @@ export default function TrivoraDriverMapNative({
             { lat: target.lat, lng: target.lng },
             { lat: driverLocation.lat, lng: driverLocation.lng },
           ]),
-          { padding: edgePadding, pitch: effectivePitch, duration }
+          // Driver at the bottom, the pick-up/drop-off they're heading to at the top.
+          { padding: edgePadding, pitch: effectivePitch, bearing: bearingBetween(driverLocation, target), duration }
         );
       }
       lastFramedRef.current = driverLocation ? { lat: driverLocation.lat, lng: driverLocation.lng } : null;
@@ -234,7 +258,7 @@ export default function TrivoraDriverMapNative({
           `padding=${JSON.stringify(edgePadding)} zoom=${homeZoom.toFixed(2)}`
       );
     }
-    camera.easeTo({ center: [lng, lat], zoom: homeZoom, padding: edgePadding, pitch: effectivePitch, duration: animated ? 500 : 0 });
+    camera.easeTo({ center: [lng, lat], zoom: homeZoom, padding: edgePadding, pitch: effectivePitch, bearing: 0, duration: animated ? 500 : 0 });
   };
 
   // Home only — frame once the map has finished loading (a camera move issued before then can be
@@ -332,7 +356,7 @@ export default function TrivoraDriverMapNative({
           if (i % step === 0 || i === routeCoordinates.length - 1) points.push({ lat: c.lat, lng: c.lng });
         });
       }
-      cameraRef.current?.fitBounds(boundsOf(points), { padding: edgePadding, duration: 500 });
+      cameraRef.current?.fitBounds(boundsOf(points), { padding: edgePadding, bearing: 0, duration: 500 });
       lastFramedRef.current = null;
     } else if (target) {
       frameTarget(true);
@@ -384,6 +408,7 @@ export default function TrivoraDriverMapNative({
           setMapReady(true);
         }}
         onRegionDidChange={(e) => {
+          if (Number.isFinite(e.nativeEvent.bearing)) setMapBearing(e.nativeEvent.bearing);
           if (e.nativeEvent.userInteraction && !userMovedRef.current) {
             userMovedRef.current = true;
             if (!target) setIsFollowing(false);
@@ -413,6 +438,7 @@ export default function TrivoraDriverMapNative({
             ]),
             padding: tripFitPadding,
             pitch: effectivePitch,
+            bearing: bearingBetween(target, tripDropoff),
           } : initialCenter ? {
             center: [initialCenter.lng, initialCenter.lat],
             zoom: homeZoom,
@@ -476,7 +502,7 @@ export default function TrivoraDriverMapNative({
           <Marker id="driver" lngLat={[driverLocation.lng, driverLocation.lat]} anchor="center">
             <View
               style={[
-                { transform: [{ rotate: `${driverLocation.heading || 0}deg` }] },
+                { transform: [{ rotate: `${(driverLocation.heading || 0) - mapBearing}deg` }] },
                 !isOnline && styles.markerOffline,
               ]}
             >

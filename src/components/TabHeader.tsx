@@ -1,7 +1,8 @@
 import React, { ReactNode, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ArrowLeft } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 
 interface TabHeaderProps {
@@ -9,6 +10,8 @@ interface TabHeaderProps {
   subtitle?: string;
   /** White card that straddles the panel's curved bottom edge (e.g. a filter or identity card). */
   children?: ReactNode;
+  /** Shows a back button before the title (pages opened from another screen). */
+  onBack?: () => void;
 }
 
 /**
@@ -19,7 +22,7 @@ interface TabHeaderProps {
  * corners, white title/subtitle, and an optional card whose vertical centre sits on the panel's
  * bottom edge. Light status-bar icons while mounted (sub-pages that replace the screen unmount it).
  */
-export default function TabHeader({ title, subtitle, children }: TabHeaderProps) {
+export default function TabHeader({ title, subtitle, children, onBack }: TabHeaderProps) {
   const insets = useSafeAreaInsets();
   const [cardHeight, setCardHeight] = useState(0);
 
@@ -27,9 +30,23 @@ export default function TabHeader({ title, subtitle, children }: TabHeaderProps)
     <View style={[styles.wrap, { paddingTop: insets.top + SPACING.sm }]}>
       <StatusBar style="light" />
       <View style={[styles.bg, { bottom: children ? cardHeight / 2 : 0 }]} pointerEvents="none" />
-      <View style={[styles.titleBlock, !children && styles.titleBlockAlone]}>
-        <Text style={styles.title} numberOfLines={1}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+      <View style={[styles.titleRow, !children && styles.titleBlockAlone]}>
+        {onBack ? (
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={onBack}
+            activeOpacity={0.8}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+          >
+            <ArrowLeft size={18} color={COLORS.primary} />
+          </TouchableOpacity>
+        ) : null}
+        <View style={styles.titleBlock}>
+          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+        </View>
       </View>
       {children ? <View onLayout={(e) => setCardHeight(e.nativeEvent.layout.height)}>{children}</View> : null}
     </View>
@@ -54,8 +71,23 @@ const styles = StyleSheet.create({
     // order there). The iOS shadow still applies.
     elevation: 0,
   },
-  titleBlock: {
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     paddingTop: SPACING.xs,
+  },
+  titleBlock: {
+    flex: 1,
+  },
+  // Solid white on the navy panel, like Home's header buttons.
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   titleBlockAlone: {
     paddingBottom: SPACING.md,

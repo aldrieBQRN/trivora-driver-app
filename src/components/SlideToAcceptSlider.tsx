@@ -39,19 +39,20 @@ export default function SlideToAcceptSlider({
   maxDragRef.current = maxDrag;
 
   const pan = useRef(new Animated.Value(0)).current;
-  const currentDrag = useRef(0);
-
-  useEffect(() => {
-    const listener = pan.addListener(({ value }) => {
-      currentDrag.current = value;
-    });
-    return () => {
-      pan.removeListener(listener);
-    };
-  }, [pan]);
+  // Where the thumb sat when the current drag began; each move places it at start + dx, clamped
+  // to the track. (Adding dx to a listener-tracked live value counted every move twice, so the
+  // thumb hit the clamp early and froze mid-track.)
+  const dragStart = useRef(0);
+  const lastValue = useRef(0);
+  // The responder is created once, so it reads these through refs (never a first-render copy).
+  const processingRef = useRef(processing);
+  processingRef.current = processing;
+  const onAcceptRef = useRef(onAccept);
+  onAcceptRef.current = onAccept;
 
   useEffect(() => {
     if (!processing) {
+      lastValue.current = 0;
       Animated.spring(pan, { toValue: 0, damping: 18, stiffness: 220, useNativeDriver: false }).start();
     }
   }, [processing, pan]);
@@ -60,42 +61,42 @@ export default function SlideToAcceptSlider({
     setTrackWidth(e.nativeEvent.layout.width);
   };
 
+  const springBack = () => {
+    lastValue.current = 0;
+    Animated.spring(pan, { toValue: 0, damping: 18, stiffness: 220, useNativeDriver: false }).start();
+  };
+
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => !processing,
-      onMoveShouldSetPanResponder: (_, gestureState) => !processing && Math.abs(gestureState.dx) > 2,
+      onStartShouldSetPanResponder: () => !processingRef.current,
+      // Claim horizontal drags before a parent sheet/scroll view can, and never hand them back
+      // mid-slide — a stolen gesture never "releases", which left the thumb stuck in the middle.
+      onMoveShouldSetPanResponderCapture: (_, g) => !processingRef.current && Math.abs(g.dx) > Math.abs(g.dy),
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
-        pan.setOffset(currentDrag.current);
-        pan.setValue(0);
+        pan.stopAnimation((value) => {
+          dragStart.current = value;
+          lastValue.current = value;
+        });
       },
-      onPanResponderMove: (_, gestureState) => {
-        const next = gestureState.dx;
-        const total = currentDrag.current + next;
-        if (total >= 0 && total <= maxDragRef.current) {
-          pan.setValue(next);
-        }
+      onPanResponderMove: (_, g) => {
+        const next = Math.min(Math.max(dragStart.current + g.dx, 0), maxDragRef.current);
+        lastValue.current = next;
+        pan.setValue(next);
       },
-      onPanResponderRelease: (_, gestureState) => {
-        pan.flattenOffset();
-        const threshold = maxDragRef.current * 0.7;
-        const value = currentDrag.current;
-        if (maxDragRef.current > 0 && (value >= threshold || gestureState.vx > 0.8)) {
-          Animated.timing(pan, {
-            toValue: maxDragRef.current,
-            duration: 140,
-            useNativeDriver: false,
-          }).start(() => {
-            onAccept();
+      onPanResponderRelease: (_, g) => {
+        // Past 60% of the track, or a quick flick to the right, completes the slide.
+        const max = maxDragRef.current;
+        if (max > 0 && (lastValue.current >= max * 0.6 || g.vx > 0.5)) {
+          lastValue.current = max;
+          Animated.timing(pan, { toValue: max, duration: 140, useNativeDriver: false }).start(() => {
+            onAcceptRef.current();
           });
         } else {
-          Animated.spring(pan, {
-            toValue: 0,
-            damping: 18,
-            stiffness: 220,
-            useNativeDriver: false,
-          }).start();
+          springBack();
         }
       },
+      onPanResponderTerminate: springBack,
     })
   ).current;
 

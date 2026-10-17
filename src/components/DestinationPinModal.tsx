@@ -21,8 +21,12 @@ interface DestinationPinModalProps {
  * Pin the passenger's DESTINATION on the existing driver map. The map opens on the driver's own
  * position for convenience only — nothing is selected until the driver taps the map, and the
  * pick-up is never chosen here (the server always takes it from the driver's GPS). The pinned
- * point's name comes from a reverse lookup when available, else a plain "Selected location".
+ * point's name and address come from a reverse lookup, shown like the Passenger app's pin sheet
+ * (never raw coordinates).
  */
+
+/** Used only when the address lookup fails, so the driver still sees a readable label. */
+const FALLBACK_PLACE = { name: 'Pinned location', address: 'Nasugbu, Batangas' };
 export default function DestinationPinModal({ visible, onClose, onConfirm, initialDestination }: DestinationPinModalProps) {
   const insets = useSafeAreaInsets();
   const { currentLat, currentLng, headingDeg, isOnline } = useDriverShift();
@@ -100,7 +104,7 @@ export default function DestinationPinModal({ visible, onClose, onConfirm, initi
     Promise.all([reversePromise, routePromise])
       .then(([found, route]) => {
         if (id !== lookupRef.current) return;
-        setPlace(found);
+        setPlace(found ?? FALLBACK_PLACE);
         if (route && route.coordinates && route.coordinates.length > 0) {
           setRouteCoordinates(route.coordinates);
           setRouteSource(route.source);
@@ -115,6 +119,7 @@ export default function DestinationPinModal({ visible, onClose, onConfirm, initi
       })
       .catch(() => {
         if (id !== lookupRef.current) return;
+        setPlace(FALLBACK_PLACE);
         if (driverLocation) {
           setRouteCoordinates([
             { lat: driverLocation.lat, lng: driverLocation.lng },
@@ -132,7 +137,7 @@ export default function DestinationPinModal({ visible, onClose, onConfirm, initi
       return;
     }
     onConfirm({
-      name: place?.name || 'Selected location',
+      name: place?.name || FALLBACK_PLACE.name,
       address: place?.address,
       lat: pin.lat,
       lng: pin.lng,
@@ -202,12 +207,12 @@ export default function DestinationPinModal({ visible, onClose, onConfirm, initi
               {pin ? (
                 <>
                   <Text style={styles.destName} numberOfLines={2}>
-                    {isResolving ? 'Finding the address…' : place?.name || 'Selected location'}
+                    {isResolving ? 'Finding the address…' : place?.name || FALLBACK_PLACE.name}
                   </Text>
-                  <Text style={styles.coords}>
-                    {place?.address && !isResolving ? `${place.address.split(',').slice(1, 3).join(',').trim()} · ` : ''}
-                    {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}
-                  </Text>
+                  {/* Address only when it adds something to the name, as in the Passenger app. */}
+                  {place?.address && place.address !== place.name && !isResolving ? (
+                    <Text style={styles.coords} numberOfLines={2}>{place.address}</Text>
+                  ) : null}
                 </>
               ) : (
                 <Text style={styles.destPlaceholder}>No pin yet</Text>

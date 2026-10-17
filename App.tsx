@@ -337,10 +337,14 @@ function DriverAppNavigator() {
   // Manual Ride in progress (a full-bleed map) and every primary tab (whose navy header runs up
   // under the status bar, same as the Passenger app) pad the status bar themselves — padding it
   // here too would double the gap above the header.
+  // The Ride Session screen pads it too, so its full-screen "View route" map can run under the
+  // status bar, and Collect Payment pads it inside its own page like the Passenger app's
+  // end-of-ride screens.
   const ownsTopInset =
     isAuthenticated &&
-    !isRideFlowActive &&
-    ((isManualRideVisible && !!manualRide) || isTabBarVisible);
+    (isRideFlowActive
+      ? rideState === 'fare_collect'
+      : (isManualRideVisible && !!manualRide) || (!isManualRideVisible && isQrSessionVisible) || isTabBarVisible);
 
   if (isFullBleedScreen) {
     return (

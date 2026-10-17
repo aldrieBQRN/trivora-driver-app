@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, LayoutChangeEvent, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, CheckCircle2, ChevronRight, Minus, Plus, Satellite, SignalLow, AlertCircle, Search, MapPinned, Banknote, Smartphone, User } from 'lucide-react-native';
+import { MapPin, CheckCircle2, ChevronRight, Minus, Plus, Satellite, SignalLow, AlertCircle, Banknote, Smartphone, User } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useManualRide, toManualRideError, ManualRideError } from '../context/ManualRideContext';
 import { useQrSession } from '../context/QrSessionContext';
@@ -53,8 +53,10 @@ function ManualRideSetup() {
   const [partySize, setPartySize] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [driverGcash, setDriverGcash] = useState<DriverGcashQrStatus | null>(null);
+  // Until the GCash lookup finishes the card isn't marked "No QR configured" — that extra line made
+  // it open taller and then shrink once a configured QR loaded.
+  const [gcashChecked, setGcashChecked] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const [showChooser, setShowChooser] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const [quote, setQuote] = useState<ManualRideQuote | null>(null);
   const [isQuoting, setIsQuoting] = useState(false);
@@ -103,7 +105,7 @@ function ManualRideSetup() {
   const quoteFresh = !!quote && quoteSignature != null && quoteSignature === currentSignature;
 
   useEffect(() => {
-    driverApi.getGcashQr().then(setDriverGcash).catch(() => {});
+    driverApi.getGcashQr().then(setDriverGcash).catch(() => {}).finally(() => setGcashChecked(true));
   }, []);
 
   const hasDriverGcash = Boolean(driverGcash?.has_gcash_qr || driverGcash?.configured || driverGcash?.gcash_qr_url);
@@ -225,7 +227,7 @@ function ManualRideSetup() {
 
         <TouchableOpacity
           style={[styles.tripRow, styles.tripRowDivided]}
-          onPress={() => setShowChooser(true)}
+          onPress={() => setShowSearch(true)}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel={destination ? `Destination ${destination.name}. Change` : 'Choose the destination'}
@@ -321,7 +323,7 @@ function ManualRideSetup() {
               >
                 GCash
               </Text>
-              {!hasDriverGcash && (
+              {gcashChecked && !hasDriverGcash && (
                 <Text style={styles.paymentMethodSubtext}>No QR configured</Text>
               )}
             </View>
@@ -397,56 +399,21 @@ function ManualRideSetup() {
         </View>
       </View>
 
-      {/* Destination method: search, or pin it on the map. The pin is the destination only —
-          the pick-up always comes from the driver's GPS on the server. */}
-      <Modal visible={showChooser} transparent animationType="fade" onRequestClose={() => setShowChooser(false)}>
-        <Pressable style={styles.chooserBackdrop} onPress={() => setShowChooser(false)} accessibilityLabel="Close">
-          <Pressable style={styles.chooserSheet} onPress={() => {}}>
-            <Text style={styles.chooserTitle}>Set the destination</Text>
-            <TouchableOpacity
-              style={styles.chooserRow}
-              onPress={() => { setShowChooser(false); setShowSearch(true); }}
-              accessibilityRole="button"
-              accessibilityLabel="Search a destination"
-            >
-              <View style={styles.chooserIcon}><Search size={18} color={COLORS.primary} /></View>
-              <View style={styles.flex}>
-                <Text style={styles.value}>Search</Text>
-                <Text style={styles.caption}>Find a place by name</Text>
-              </View>
-              <ChevronRight size={18} color={COLORS.textMuted} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.chooserRow, styles.chooserRowDivider]}
-              onPress={() => { setShowChooser(false); setShowPin(true); }}
-              accessibilityRole="button"
-              accessibilityLabel="Pin the destination on the map"
-            >
-              <View style={styles.chooserIcon}><MapPinned size={18} color={COLORS.primary} /></View>
-              <View style={styles.flex}>
-                <Text style={styles.value}>Pin on map</Text>
-                <Text style={styles.caption}>Tap the exact drop-off point</Text>
-              </View>
-              <ChevronRight size={18} color={COLORS.textMuted} />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.chooserCancel} onPress={() => setShowChooser(false)} accessibilityRole="button">
-              <Text style={styles.chooserCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
+      {/* Destination: search, or pin it on the map from the search page (as in the Passenger app).
+          The pin is the destination only — the pick-up always comes from the driver's GPS. Closing
+          the pin map returns to the search page. */}
       <DestinationSearchModal
         visible={showSearch}
         onClose={() => setShowSearch(false)}
         onSelect={(d) => { setDestination(d); setShowSearch(false); }}
+        onPinOnMap={() => setShowPin(true)}
       />
 
       <DestinationPinModal
         visible={showPin}
         onClose={() => setShowPin(false)}
         initialDestination={destination}
-        onConfirm={(d) => { setDestination(d); setShowPin(false); }}
+        onConfirm={(d) => { setDestination(d); setShowPin(false); setShowSearch(false); }}
       />
     </View>
   );
@@ -694,18 +661,6 @@ const styles = StyleSheet.create({
   statValue: { ...TYPOGRAPHY.h3, color: COLORS.textPrimary, marginTop: 3 },
   statStrong: { ...TYPOGRAPHY.h2, color: COLORS.textPrimary, marginTop: 1 },
   changeText: { ...TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.primary },
-  chooserBackdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.45)', justifyContent: 'flex-end' },
-  chooserSheet: {
-    backgroundColor: COLORS.background,
-    borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
-    paddingHorizontal: SPACING.lg, paddingTop: SPACING.lg, paddingBottom: SPACING.lg,
-  },
-  chooserTitle: { ...TYPOGRAPHY.h3, fontWeight: '700', color: COLORS.textPrimary, marginBottom: SPACING.sm },
-  chooserRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64 },
-  chooserRowDivider: { borderTopWidth: 1, borderTopColor: COLORS.borderLight },
-  chooserIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primaryTint, alignItems: 'center', justifyContent: 'center' },
-  chooserCancel: { alignItems: 'center', justifyContent: 'center', minHeight: 44, marginTop: SPACING.sm },
-  chooserCancelText: { ...TYPOGRAPHY.bodyLarge, color: COLORS.textSecondary },
   cancelLink: { alignSelf: 'center', minHeight: 36, justifyContent: 'center', marginTop: -SPACING.xs },
   cancelText: { ...TYPOGRAPHY.bodySmall, fontWeight: '600', color: COLORS.dangerDark },
 

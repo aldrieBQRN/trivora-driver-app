@@ -139,7 +139,11 @@ export default function DriverFareCollectScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { paddingTop: SPACING.lg + insets.top }]}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Two states: Collect Payment (confirm in the footer), then Ride Completed. */}
         <View style={styles.header}>
           <View style={[styles.statusCircle, isPaid && styles.statusCirclePaid]}>
@@ -489,7 +493,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
   },
   quickCashChipActive: {
-    backgroundColor: COLORS.primaryTint,
+    backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
   quickCashText: {
@@ -498,7 +502,7 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
   },
   quickCashTextActive: {
-    color: COLORS.primary,
+    color: COLORS.textInverse,
   },
   changeRow: {
     flexDirection: 'row',
@@ -510,8 +514,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   changeRowSuccess: {
-    backgroundColor: COLORS.successLight,
-    borderColor: COLORS.successBorder,
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
   },
   changeRowError: {
     backgroundColor: COLORS.dangerLight,
@@ -524,7 +528,7 @@ const styles = StyleSheet.create({
   },
   changeValue: {
     ...TYPOGRAPHY.h2,
-    color: COLORS.success,
+    color: COLORS.textPrimary,
   },
   changeTextError: {
     color: COLORS.dangerDark,
