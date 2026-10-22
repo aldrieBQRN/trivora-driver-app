@@ -24,6 +24,8 @@ interface DriverDashboardScreenProps {
   onOpenViolations: () => void;
   /** Reopens the walk-in (Scan to Ride) session screen while a session is open. */
   onOpenQrSession?: () => void;
+  /** Opens "Select tricycle" — only offered with 2+ tricycles, while Offline. */
+  onChangeTricycle?: () => void;
 }
 
 /** Below this height (px) the panel uses tighter type and spacing so the map keeps enough room. */
@@ -83,6 +85,7 @@ export default function DriverDashboardScreen({
   onOpenEarnings,
   onOpenViolations,
   onOpenQrSession,
+  onChangeTricycle,
 }: DriverDashboardScreenProps) {
   const { driver } = useDriverAuth();
   const { session: qrSession } = useQrSession();
@@ -432,6 +435,29 @@ export default function DriverDashboardScreen({
           </Text>
         </View>
 
+        {/* Accounts with 2+ tricycles: which one this shift is on, changeable while Offline and
+            no ride is open (the server enforces the same rule). */}
+        {(driver?.tricycles?.length ?? 0) > 1 && (
+          <TouchableOpacity
+            style={styles.tricycleRow}
+            onPress={onChangeTricycle}
+            disabled={isOnline || !!qrSession || !!manualRide}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Change tricycle"
+          >
+            <Text style={styles.tricycleRowText} numberOfLines={1}>
+              Driving: {driver?.tricycle?.plateNumber}
+            </Text>
+            {!isOnline && !qrSession && !manualRide ? (
+              <View style={styles.tricycleRowAction}>
+                <Text style={styles.tricycleRowLink}>Change tricycle</Text>
+                <ChevronRight size={14} color={COLORS.primary} />
+              </View>
+            ) : null}
+          </TouchableOpacity>
+        )}
+
         {canStartManualRide ? (
           // Online and free: Go Offline shares the row with Manual Ride (walk-in passenger
           // without the app).
@@ -780,6 +806,33 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.bodySmall,
     fontWeight: '700',
     color: COLORS.dangerDark,
+  },
+  tricycleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: SPACING.sm,
+    backgroundColor: COLORS.surfaceInput,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 10,
+    marginBottom: SPACING.sm,
+  },
+  tricycleRowText: {
+    ...TYPOGRAPHY.bodySmall,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    flexShrink: 1,
+  },
+  tricycleRowAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  tricycleRowLink: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
   statusBlock: {
     gap: 4,

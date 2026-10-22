@@ -17,11 +17,11 @@ import FloatingIconButton from '../components/FloatingIconButton';
 import FormField from '../components/FormField';
 import Button from '../components/Button';
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 interface DriverRegistrationScreenProps {
   onBack: () => void;
   onNext: (info: PendingAccountInfo) => void;
+  /** The selected person already has an account: go sign in, then the tricycle is added. */
+  onSignIn: () => void;
   /** Repopulates the form when returning from the Create Password step via Back, so nothing
    * already entered here is lost. */
   initialValues?: PendingAccountInfo | null;
@@ -35,15 +35,13 @@ interface DriverRegistrationScreenProps {
  * will use this Driver App account. The chosen person is re-validated server-side at
  * registration, so the account can only ever belong to an actual owner/driver of this
  * franchise. Also shows the verified franchise/unit and the GPS tracking method choice.
- * The only thing entered here is the account's sign-in EMAIL (login is email-only),
- * prefilled from the record; name, mobile number, and birthday belong to the existing
- * person records and are confirmed, never re-entered. An owner who already has a Trivora
- * account keeps that account's email, shown read-only.
- * Password creation and the Terms & Privacy Policy agreement live on their own separate step
- * (DriverSetPasswordScreen).
+ * Nothing personal is typed here. What happens next depends on the selected person:
+ *  - already has a Trivora account → "Sign in" (the tricycle is added to that account);
+ *  - no account yet → a code goes to their email ON FILE (shown masked) on the next step;
+ *  - no usable email on file → they must update it at the TMO first.
  */
-export default function DriverRegistrationScreen({ onBack, onNext, initialValues }: DriverRegistrationScreenProps) {
-  const { verifiedFranchise } = useDriverAuth();
+export default function DriverRegistrationScreen({ onBack, onNext, onSignIn, initialValues }: DriverRegistrationScreenProps) {
+  const { verifiedFranchise, setPendingLink } = useDriverAuth();
   const tricycle = verifiedFranchise?.tricycle;
   // The franchise's registered people — owner (+ separate assigned driver) — read straight
   // off the record the backend just verified against. The user picks one of these.
@@ -56,14 +54,11 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
     initialValues?.trackingMode ?? 'mobile_app'
   );
   const [iotDeviceId, setIotDeviceId] = useState(initialValues?.iotDeviceId ?? '');
-  const emailOnFile = (type: 'owner' | 'driver' | null) =>
-    people.find((p) => p.type === type)?.email ?? '';
-  const [email, setEmail] = useState(initialValues?.email ?? emailOnFile(personType));
-  const [errors, setErrors] = useState<{ personType?: string; iotDeviceId?: string; email?: string }>({});
+  const [errors, setErrors] = useState<{ personType?: string; iotDeviceId?: string }>({});
 
   const selectedPerson = people.find((p) => p.type === personType);
-  // This person already has a Trivora account: it keeps its own email.
-  const emailLocked = !!selectedPerson?.email_locked;
+  const hasAccount = !!selectedPerson?.has_account;
+  const cannotReceiveCode = !!selectedPerson && !hasAccount && !selectedPerson.can_receive_code;
 
   // Switching back to Mobile clears any typed device id so a stray value from a prior IoT
   // selection can never linger in state and get accidentally submitted.
@@ -76,9 +71,18 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
   };
 
   const handleSelectPerson = (type: 'owner' | 'driver') => {
-    if (type !== personType) setEmail(emailOnFile(type));
     setPersonType(type);
-    setErrors((e) => ({ ...e, personType: undefined, email: undefined }));
+    setErrors((e) => ({ ...e, personType: undefined }));
+  };
+
+  const handleSignIn = () => {
+    if (!personType || !verifiedFranchise) return;
+    setPendingLink({
+      franchiseNumber: verifiedFranchise.franchise_number,
+      personType,
+      emailMasked: selectedPerson?.email_masked ?? null,
+    });
+    onSignIn();
   };
 
   const handleNext = () => {
@@ -86,13 +90,13 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
       setErrors({ personType: 'Select which registered person will use this Driver App.' });
       return;
     }
+    if (hasAccount) {
+      handleSignIn();
+      return;
+    }
+    if (cannotReceiveCode) return;
 
     const nextErrors: typeof errors = {};
-    const accountEmail = emailLocked ? selectedPerson?.email ?? '' : email.trim().toLowerCase();
-    if (!emailLocked) {
-      if (!accountEmail) nextErrors.email = 'Enter the email this person will sign in with.';
-      else if (!EMAIL_PATTERN.test(accountEmail)) nextErrors.email = 'Enter a valid email address (e.g. name@example.com).';
-    }
     if (trackingMode === 'iot_device' && !iotDeviceId.trim()) {
       nextErrors.iotDeviceId = 'Enter the IoT hardware device ID.';
     }
@@ -101,7 +105,7 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
 
     onNext({
       personType,
-      email: accountEmail,
+      emailMasked: selectedPerson?.email_masked ?? null,
       trackingMode,
       iotDeviceId: trackingMode === 'iot_device' ? iotDeviceId.trim() : undefined,
     });
@@ -213,42 +217,37 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
           These details come from your existing franchise record and cannot be edited here.
         </Text>
 
-        {/* Sign-in email for the selected person — login is email-only. */}
-        {personType &&
-          (emailLocked ? (
-            <View style={styles.lockedEmailBox}>
-              <Text style={styles.label}>Email Address</Text>
-              <View style={styles.lockedEmailRow}>
-                <Mail size={16} color={COLORS.primary} />
-                <Text style={styles.lockedEmailText} numberOfLines={1}>
-                  {selectedPerson?.email}
-                </Text>
-              </View>
-              <Text style={styles.personCardNote}>
-                This person already has a Trivora account. Sign in to the Driver App with this email.
+        {/* Sign-in email for the selected person — always the one on file, shown masked. */}
+        {personType && (
+          <View style={styles.lockedEmailBox}>
+            <Text style={styles.label}>Email Address</Text>
+            <View style={styles.lockedEmailRow}>
+              <Mail size={16} color={COLORS.primary} />
+              <Text style={styles.lockedEmailText} numberOfLines={1}>
+                {selectedPerson?.email_masked || 'No email on file'}
               </Text>
             </View>
-          ) : (
-            <View style={styles.emailField}>
-              <FormField
-                label="Email Address"
-                icon={Mail}
-                placeholder="e.g. pedro@example.com"
-                value={email}
-                onChangeText={(v) => {
-                  setEmail(v);
-                  if (errors.email) setErrors((e) => ({ ...e, email: undefined }));
-                }}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                error={errors.email}
-              />
+            {hasAccount ? (
               <Text style={styles.personCardNote}>
-                {selectedPerson?.role || 'This person'} will sign in to the Driver App with this email.
+                This person already has a Trivora account. Sign in with that email and password, and this
+                tricycle will be added to the account.
               </Text>
-            </View>
-          ))}
+            ) : cannotReceiveCode ? (
+              <Text style={styles.errorText}>
+                There is no email on file that can receive a code. Please visit the Municipal Tricycle
+                Office (TMO) to update the email on your franchise record.
+              </Text>
+            ) : (
+              <Text style={styles.personCardNote}>
+                We'll send a 6-digit code to this email to confirm it's you. It will also be your
+                sign-in email.
+              </Text>
+            )}
+          </View>
+        )}
 
+        {!hasAccount && (
+          <>
         <Text style={styles.label}>GPS Telematics Tracking Method</Text>
         <View style={styles.trackingOptionsRow}>
           <TouchableOpacity
@@ -288,8 +287,15 @@ export default function DriverRegistrationScreen({ onBack, onNext, initialValues
             error={errors.iotDeviceId}
           />
         )}
+          </>
+        )}
 
-        <Button label="Next" onPress={handleNext} style={styles.submitBtn} />
+        <Button
+          label={hasAccount ? 'Sign In to Add Tricycle' : 'Next'}
+          onPress={handleNext}
+          disabled={cannotReceiveCode}
+          style={styles.submitBtn}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -431,9 +437,6 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.micro,
     color: COLORS.textMuted,
     marginTop: 6,
-  },
-  emailField: {
-    marginTop: SPACING.md,
   },
   lockedEmailBox: {
     marginTop: SPACING.md,

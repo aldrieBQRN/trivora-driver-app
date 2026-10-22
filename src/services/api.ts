@@ -194,10 +194,36 @@ export const driverApi = {
     });
   },
 
+  /** Registration, new account only: emails a 6-digit code to the selected person's email ON
+   * FILE (409 ACCOUNT_EXISTS when that person already has an account — they sign in instead). */
+  sendRegistrationCode: async (franchiseNumber: string, personType: 'owner' | 'driver') => {
+    return request('/driver/register/send-code', {
+      method: 'POST',
+      body: JSON.stringify({ franchise_number: franchiseNumber, person_type: personType }),
+    });
+  },
+
+  /** Registration, new account only: franchise + person + emailed code + password. */
   register: async (payload: any) => {
     return request('/driver/register', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  /** Signed in: adds a verified franchise's tricycle to this account (person already had one). */
+  linkFranchise: async (franchiseNumber: string, personType: 'owner' | 'driver') => {
+    return request('/driver/link-franchise', {
+      method: 'POST',
+      body: JSON.stringify({ franchise_number: franchiseNumber, person_type: personType }),
+    });
+  },
+
+  /** Chooses which of the account's tricycles is driven this shift (only while Offline). */
+  selectTricycle: async (tricycleId: number) => {
+    return request('/driver/tricycles/select', {
+      method: 'POST',
+      body: JSON.stringify({ tricycle_id: tricycleId }),
     });
   },
 
@@ -635,13 +661,15 @@ export function mapAuthResponseToDriverProfile(res: any, fallbackEmail?: string)
   const operator = res.operator || {};
   const tricycle = res.tricycle || {};
   const franchise = res.franchise || {};
+  // The person this account drives as (owner or separate driver), read live from the web record.
+  const person = res.person || null;
 
   return {
     id: rawDriver.id ?? res.user?.id ?? Date.now(),
-    name: operator.full_name || res.user?.name || 'Driver',
+    name: person?.full_name || res.user?.name || operator.full_name || 'Driver',
     email: res.user?.email || fallbackEmail || '',
-    mobile: rawDriver.mobile_number || undefined,
-    licenseNumber: operator.license_number || rawDriver.license_number || '',
+    mobile: person?.mobile_number || rawDriver.mobile_number || undefined,
+    licenseNumber: person ? person.license_number || '' : operator.license_number || '',
     todaZone: {
       id: 0,
       code: '',
@@ -674,6 +702,7 @@ export function mapAuthResponseToDriverProfile(res: any, fallbackEmail?: string)
     franchiseStatus: franchise.status === 'suspended' || franchise.status === 'revoked' ? franchise.status : 'active',
     franchiseStatusReason: franchise.status_reason ?? null,
     franchiseStatusChangedAt: franchise.status_changed_at ?? null,
+    tricycles: Array.isArray(res.tricycles) ? res.tricycles : [],
   };
 }
 

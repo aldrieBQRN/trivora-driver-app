@@ -24,6 +24,7 @@ import DriverForgotPasswordScreen from './src/screens/DriverForgotPasswordScreen
 import DriverFranchiseVerificationScreen from './src/screens/DriverFranchiseVerificationScreen';
 import DriverRegistrationScreen from './src/screens/DriverRegistrationScreen';
 import DriverSetPasswordScreen from './src/screens/DriverSetPasswordScreen';
+import DriverSelectTricycleScreen from './src/screens/DriverSelectTricycleScreen';
 
 // Main app screens
 import DriverDashboardScreen from './src/screens/DriverDashboardScreen';
@@ -59,10 +60,10 @@ const PRIMARY_TABS: CurvedTab<PrimaryTab>[] = [
   { key: 'earnings', label: 'Earnings', icon: Wallet },
   { key: 'profile', label: 'Profile', icon: User },
 ];
-type PushedScreen = 'tracking_settings' | 'qr_code' | 'gcash_settings' | null;
+type PushedScreen = 'tracking_settings' | 'qr_code' | 'gcash_settings' | 'select_tricycle' | null;
 
 function DriverAppNavigator() {
-  const { isAuthenticated, isRestoring } = useDriverAuth();
+  const { isAuthenticated, isRestoring, needsTricycleSelection, finishTricycleSelection } = useDriverAuth();
   const { rideState, incomingBooking, setRideState, setIncomingBooking, setActiveBooking } = useDriverShift();
   const { session: qrSession } = useQrSession();
   // Manual Ride (walk-in passenger without the app): its screen opens from Home or on resume.
@@ -166,6 +167,7 @@ function DriverAppNavigator() {
   }
 
   const isRideFlowActive = rideState !== 'idle' || !!incomingBooking;
+  const isSelectingTricycle = isAuthenticated && needsTricycleSelection && !isRideFlowActive;
   // Only the map-driven ride states render full-bleed (they manage their own insets via
   // ScreenHeader's overlay variant); fare_collect is a plain content screen and keeps the
   // normal padded safe area.
@@ -220,6 +222,7 @@ function DriverAppNavigator() {
                 setPendingAccountInfo(info);
                 setAuthScreen('set_password');
               }}
+              onSignIn={() => setAuthScreen('login')}
               initialValues={pendingAccountInfo}
             />
           );
@@ -234,6 +237,7 @@ function DriverAppNavigator() {
                   setPendingAccountInfo(info);
                   setAuthScreen('set_password');
                 }}
+                onSignIn={() => setAuthScreen('login')}
                 initialValues={pendingAccountInfo}
               />
             );
@@ -255,6 +259,11 @@ function DriverAppNavigator() {
             />
           );
       }
+    }
+
+    // Login → Select tricycle → Home, for an account with 2+ tricycles (skipped if a ride resumed).
+    if (isSelectingTricycle) {
+      return <DriverSelectTricycleScreen onDone={finishTricycleSelection} />;
     }
 
     if (isRideFlowActive) {
@@ -292,6 +301,12 @@ function DriverAppNavigator() {
       return <DriverGcashQrScreen onBack={() => setPushedScreen(null)} />;
     }
 
+    if (pushedScreen === 'select_tricycle') {
+      return (
+        <DriverSelectTricycleScreen onBack={() => setPushedScreen(null)} onDone={() => setPushedScreen(null)} />
+      );
+    }
+
     if (activeTab === 'trips') {
       return <RideHistoryScreen />;
     }
@@ -326,6 +341,7 @@ function DriverAppNavigator() {
         onOpenEarnings={() => goToTab('earnings')}
         onOpenViolations={() => goToTab('violations')}
         onOpenQrSession={() => setIsQrSessionOpen(true)}
+        onChangeTricycle={() => setPushedScreen('select_tricycle')}
       />
     );
   };
@@ -333,7 +349,7 @@ function DriverAppNavigator() {
   // The map-driven ride screens (Dispatch, En Route, In Transit) manage their own full-bleed
   // map + floating header + insets, so they render outside the padded SafeAreaView below.
   const isFullBleedScreen = isAuthenticated && isMapRideState;
-  const isTabBarVisible = isAuthenticated && !isRideFlowActive && pushedScreen === null && !isQrSessionVisible && !isManualRideVisible;
+  const isTabBarVisible = isAuthenticated && !isRideFlowActive && !isSelectingTricycle && pushedScreen === null && !isQrSessionVisible && !isManualRideVisible;
   // Manual Ride in progress (a full-bleed map) and every primary tab (whose navy header runs up
   // under the status bar, same as the Passenger app) pad the status bar themselves — padding it
   // here too would double the gap above the header.

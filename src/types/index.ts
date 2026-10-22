@@ -91,6 +91,31 @@ export interface DriverProfile {
   franchiseStatusReason?: string | null;
   /** ISO timestamp of the franchise's last status change, if any. */
   franchiseStatusChangedAt?: string | null;
+  /** Every tricycle on this account (one account can hold 2+ franchises). `tricycle` above is
+   * the one selected for this shift; with 2+ the app asks which one to drive after login. */
+  tricycles?: DriverTricycleOption[];
+}
+
+/** One tricycle on the account, from the backend's `tricycles` list (login / me / select). */
+export interface DriverTricycleOption {
+  id: number;
+  plate_number: string;
+  sticker_number: string | null;
+  make_model: string;
+  unit_code: string;
+  franchise_number: string | null;
+  franchise_status: 'active' | 'suspended' | 'revoked' | string | null;
+  /** False while the franchise is suspended/revoked — selectable, but can't go Online. */
+  can_operate: boolean;
+  is_current: boolean;
+}
+
+/** A franchise verified during registration whose selected person already has an account: they
+ * sign in, and the tricycle is added to that account right after (POST /driver/link-franchise). */
+export interface PendingFranchiseLink {
+  franchiseNumber: string;
+  personType: 'owner' | 'driver';
+  emailMasked: string | null;
 }
 
 export type PaymentMethod = 'cash' | 'gcash';
@@ -246,18 +271,17 @@ export interface RideHistoryItem {
 }
 
 /** Vehicle/GPS-config + person-selection fields carried from the registration flow's
- * "Select Person" step to the separate "Create Password" step where the actual account is
- * created. `personType` is WHICH of the franchise's verified people (the Tricycle Owner or
+ * "Select Person" step to the separate "Verify Email & Password" step where the actual account
+ * is created. `personType` is WHICH of the franchise's verified people (the Tricycle Owner or
  * the separate assigned Tricycle Driver) this account belongs to — chosen from the list the
- * backend returned, never typed in. No other personal information lives here: name,
- * birthday, mobile, and barangay are read-only from the verified franchise record and are
- * never collected during registration. */
+ * backend returned, never typed in. The sign-in email is the one ON FILE for that person (the
+ * code is sent there), so nothing personal is collected here at all. */
 export interface PendingAccountInfo {
   trackingMode: 'mobile_app' | 'iot_device';
   iotDeviceId?: string;
   personType: 'owner' | 'driver';
-  /** The account's sign-in email (login is email-only). */
-  email: string;
+  /** Masked email on file the verification code goes to (display only). */
+  emailMasked: string | null;
 }
 
 /** Read-only EXISTING personal information of one person associated with the franchise —
@@ -281,17 +305,18 @@ export interface VerifiedPersonalInformation {
   date_of_birth?: string | null;
   mobile_number: string | null;
   barangay: string | null;
-  /** Email on file: the owner's existing account email, or the separate driver's
-   * registration email (a prefill they can correct). */
-  email?: string | null;
-  /** True when this person already has a Trivora account — its email is used as-is. */
-  email_locked?: boolean;
+  /** True when this person already has a Trivora account: they sign in instead of registering,
+   * and the tricycle is added to that account. */
+  has_account: boolean;
+  /** Masked email: the existing account's, or the email on file the code will be sent to. */
+  email_masked: string | null;
+  /** False when there is no usable email on file — the person must update it at the TMO. */
+  can_receive_code: boolean;
 }
 
 export interface VerifiedOperatorData {
   success: boolean;
   eligible: boolean;
-  verification_token: string;
   /** The authoritative permit number from franchise_schemes.franchise_number — the credential
    * this whole verification is keyed on, echoed from the resolved DB record (not merely the
    * user-typed input) so the UI can display it distinctly from what was entered. */

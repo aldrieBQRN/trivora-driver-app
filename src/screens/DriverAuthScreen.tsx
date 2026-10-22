@@ -13,7 +13,7 @@ import {
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { useNetwork } from '../context/NetworkContext';
-import { driverApi, mapAuthResponseToDriverProfile, getApiBaseUrl } from '../services/api';
+import { driverApi, mapAuthResponseToDriverProfile, getApiBaseUrl, setAuthToken } from '../services/api';
 import { DriverProfile } from '../types';
 import { Lock, Eye, EyeOff, Check, Mail } from 'lucide-react-native';
 import { TricycleIcon } from '../components/icons';
@@ -60,7 +60,7 @@ const DEMO_DRIVER: DriverProfile = {
  * Login is email-only: the account email + password — the same credential the web portal
  * uses. The email is the one entered when the Driver App account was registered. */
 export default function DriverAuthScreen({ onGoToRegister, onForgotPassword }: DriverAuthScreenProps) {
-  const { login } = useDriverAuth();
+  const { login, pendingLink, setPendingLink } = useDriverAuth();
   const { isConnected, checkConnection } = useNetwork();
 
   const [email, setEmail] = useState('');
@@ -94,7 +94,23 @@ export default function DriverAuthScreen({ onGoToRegister, onForgotPassword }: D
         await new Promise((r) => setTimeout(r, 1500));
         res = await driverApi.login(trimmedEmail, password);
       }
-      login(mapAuthResponseToDriverProfile(res), res.token);
+
+      // Came from registration with a person who already has an account: add the verified
+      // franchise's tricycle to it now that the password has proved who they are.
+      let profileRes = res;
+      if (pendingLink) {
+        setAuthToken(res.token);
+        try {
+          profileRes = await driverApi.linkFranchise(pendingLink.franchiseNumber, pendingLink.personType);
+        } catch (linkErr: any) {
+          Alert.alert(
+            'Tricycle not added',
+            linkErr?.message || 'The franchise could not be added to this account. Please try again.'
+          );
+        }
+        setPendingLink(null);
+      }
+      login(mapAuthResponseToDriverProfile(profileRes), res.token);
     } catch (err: any) {
       if (err?.status !== undefined) {
         // The backend was reached and rejected the credentials
@@ -141,6 +157,14 @@ export default function DriverAuthScreen({ onGoToRegister, onForgotPassword }: D
         <Text style={styles.subtitle}>Log in to continue your shift.</Text>
 
         <View style={styles.form}>
+          {pendingLink && (
+            <View style={styles.linkInfoBox}>
+              <Text style={styles.linkInfoText}>
+                Sign in{pendingLink.emailMasked ? ` with ${pendingLink.emailMasked}` : ''} to add franchise{' '}
+                {pendingLink.franchiseNumber} to your account.
+              </Text>
+            </View>
+          )}
           {errors.form && (
             <View style={styles.formErrorBox}>
               <Text style={styles.formErrorText}>{errors.form}</Text>
@@ -273,6 +297,17 @@ const styles = StyleSheet.create({
   formErrorText: {
     ...TYPOGRAPHY.bodySmall,
     color: COLORS.dangerDark,
+    fontWeight: '700',
+  },
+  linkInfoBox: {
+    backgroundColor: COLORS.primaryTint,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm + 2,
+    marginBottom: SPACING.sm,
+  },
+  linkInfoText: {
+    ...TYPOGRAPHY.bodySmall,
+    color: COLORS.primary,
     fontWeight: '700',
   },
   optionsRow: {

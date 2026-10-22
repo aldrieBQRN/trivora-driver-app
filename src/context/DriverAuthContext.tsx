@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DriverProfile, VerifiedOperatorData } from '../types';
+import { DriverProfile, PendingFranchiseLink, VerifiedOperatorData } from '../types';
 import { setAuthToken, setOnUnauthorized, driverApi, mapAuthResponseToDriverProfile } from '../services/api';
 import {
   persistDriverSession,
@@ -27,6 +27,13 @@ interface DriverAuthContextType {
   refreshProfile: () => Promise<void>;
   verifyFranchiseEligibility: (franchiseNumber: string) => Promise<VerifiedOperatorData>;
   setDriver: React.Dispatch<React.SetStateAction<DriverProfile | null>>;
+  /** Set during registration when the selected person already has an account: the login screen
+   * adds this franchise's tricycle to the account right after signing in. */
+  pendingLink: PendingFranchiseLink | null;
+  setPendingLink: (link: PendingFranchiseLink | null) => void;
+  /** True right after a sign-in to an account with 2+ tricycles — Login → Select → Home. */
+  needsTricycleSelection: boolean;
+  finishTricycleSelection: () => void;
 }
 
 const DriverAuthContext = createContext<DriverAuthContextType | null>(null);
@@ -37,6 +44,8 @@ export function DriverAuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isRestoring, setIsRestoring] = useState<boolean>(true);
   const [verifiedFranchise, setVerifiedFranchise] = useState<VerifiedOperatorData | null>(null);
+  const [pendingLink, setPendingLink] = useState<PendingFranchiseLink | null>(null);
+  const [needsTricycleSelection, setNeedsTricycleSelection] = useState<boolean>(false);
   // Mirrors the token currently held by api.ts's module-level authToken (which has no getter) so
   // updateProfile — called from screens with no token of its own — can still keep the persisted
   // session's cached profile in sync without re-threading the token through every call site.
@@ -53,6 +62,8 @@ export function DriverAuthProvider({ children }: { children: ReactNode }) {
 
   const login = (driverData: DriverProfile, token: string | null = null) => {
     setDriver(driverData);
+    // A fresh sign-in (not a restored session) asks which tricycle to drive when there are 2+.
+    setNeedsTricycleSelection((driverData.tricycles?.length ?? 0) > 1);
     setIsAuthenticated(true);
     if (token) {
       tokenRef.current = token;
@@ -69,6 +80,8 @@ export function DriverAuthProvider({ children }: { children: ReactNode }) {
 
     const prevToken = tokenRef.current;
     setDriver(null);
+    setNeedsTricycleSelection(false);
+    setPendingLink(null);
     setIsAuthenticated(false);
     tokenRef.current = null;
     setAuthToken(null);
@@ -214,6 +227,10 @@ export function DriverAuthProvider({ children }: { children: ReactNode }) {
         refreshProfile,
         verifyFranchiseEligibility,
         setDriver,
+        pendingLink,
+        setPendingLink,
+        needsTricycleSelection,
+        finishTricycleSelection: () => setNeedsTricycleSelection(false),
       }}
     >
       {children}
