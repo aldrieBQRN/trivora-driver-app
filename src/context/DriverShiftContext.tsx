@@ -619,7 +619,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         return false;
       }
       await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.High,
         // Sampling rate only — locationTask.ts decides whether a fix is transmitted (15s).
         timeInterval: GPS_FIX_DELIVERY_INTERVAL_MS,
         // No displacement filter: a stationary tricycle must still produce a fix every cycle,
@@ -751,7 +751,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
 
         const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
         const position = await Promise.race([
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
           timeoutPromise,
         ]);
 
@@ -814,9 +814,11 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
           try {
             const watchSub = await Location.watchPositionAsync(
               {
-                accuracy: Location.Accuracy.Balanced,
+                accuracy: Location.Accuracy.High,
                 timeInterval: 8000,
-                distanceInterval: 3,
+                // 0, not a movement threshold: this watch is the fallback sender when a scheduled
+                // tick gets no fix, and a parked tricycle must still be covered.
+                distanceInterval: 0,
               },
               (position) => {
                 if (cancelled) return;
@@ -905,7 +907,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       if (trackingMode !== 'mobile_app') return;
 
       try {
-        const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const { latitude, longitude, heading, speed } = position.coords;
 
         setCurrentLat(latitude);
