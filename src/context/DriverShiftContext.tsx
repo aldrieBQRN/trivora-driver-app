@@ -784,6 +784,12 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (cancelled || status !== 'granted') return;
 
+        // Initial instant poll — before the background-permission request below. On a first
+        // Online that request opens Android's "Allow all the time" prompt, and waiting for the
+        // driver to answer it kept the unit off TMO Live Monitoring (no GPS yet) for that long.
+        await pollOnce();
+        if (cancelled) return;
+
         // Hand the OS the ability to keep delivering fixes while this app is backgrounded —
         // once, after the foreground grant is in place, and only in mobile-GPS mode (in IoT mode
         // the device itself transmits, so the app must not add a second background source).
@@ -797,10 +803,6 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
           }
           if (__DEV__ && started) console.log('[telemetry:bg] background location updates running');
         }
-
-        // Perform initial instant poll
-        await pollOnce();
-        if (cancelled) return;
 
         // The scheduled GPS_TRANSMISSION_INTERVAL_MS (5-second) transmission cadence. Nothing else — not a UI refresh, not the
         // position watch — is allowed to set the rate at which GPS reaches the backend.
