@@ -97,8 +97,6 @@ export default function DriverSetPasswordScreen({ onBack, accountInfo }: DriverS
         code,
         password,
         confirm_password: confirmPassword,
-        tracking_mode: accountInfo.trackingMode,
-        iot_device_id: accountInfo.trackingMode === 'iot_device' ? accountInfo.iotDeviceId : undefined,
       });
       login(mapAuthResponseToDriverProfile(res), res.token);
     } catch (err: any) {

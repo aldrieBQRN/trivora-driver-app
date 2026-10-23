@@ -80,8 +80,8 @@ interface DriverShiftContextType {
   isAvailable: boolean;
   setIsAvailable: (avail: boolean) => void;
   trackingMode: 'mobile_app' | 'iot_device';
+  /** Set by TMO (Final Confirmation / Tricycle Details); read-only in the app. */
   iotDeviceId: string;
-  updateTrackingMode: (mode: 'mobile_app' | 'iot_device', iotId?: string) => Promise<void>;
   /** Real device GPS only — null until a fix has actually been obtained. Never a fake/default
    * coordinate; screens that need a location must guard for null and show LocationPendingView. */
   currentLat: number | null;
@@ -136,7 +136,7 @@ interface DriverShiftContextType {
 const DriverShiftContext = createContext<DriverShiftContextType | null>(null);
 
 export function DriverShiftProvider({ children }: { children: ReactNode }) {
-  const { driver } = useDriverAuth();
+  const { driver, refreshProfile } = useDriverAuth();
   const { showToast } = useToast();
 
   // Requirements 1 & 9: Every new login/session starts Offline until the driver manually taps Online.
@@ -223,23 +223,15 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   }, [trackingMode]);
 
   // DriverShiftProvider mounts at the app root, before DriverAuthProvider has restored/logged in a
-  // driver, so the two useState initialisers above can never see the real server values. Without
-  // this sync an IoT-configured unit would silently stay on the mobile_app default (and its pings
-  // would now be correctly refused by the server). Runs once per driver session — keyed on driver
-  // id — so it neither fights a mid-session change made via updateTrackingMode nor re-runs on
-  // unrelated profile refreshes for the same driver.
-  const syncedTrackingDriverIdRef = useRef<number | null>(null);
+  // driver, so the two useState initialisers above can never see the real server values. The
+  // tracking method is set by TMO only (Final Confirmation / Tricycle Details), so this simply
+  // mirrors whatever the server's profile says — including after a refreshProfile() picks up a
+  // change TMO made mid-session (see setIsOnline and sendPing below).
   useEffect(() => {
-    const id = driver?.id ?? null;
-    if (id == null) {
-      syncedTrackingDriverIdRef.current = null;
-      return;
-    }
-    if (syncedTrackingDriverIdRef.current === id) return;
-    syncedTrackingDriverIdRef.current = id;
-    setTrackingMode(driver?.tricycle?.activeTrackingMode === 'iot_device' ? 'iot_device' : 'mobile_app');
-    setIotDeviceId(driver?.tricycle?.iotDeviceId || '');
-  }, [driver?.id]);
+    if (!driver) return;
+    setTrackingMode(driver.tricycle?.activeTrackingMode === 'iot_device' ? 'iot_device' : 'mobile_app');
+    setIotDeviceId(driver.tricycle?.iotDeviceId || '');
+  }, [driver?.id, driver?.tricycle?.activeTrackingMode, driver?.tricycle?.iotDeviceId]);
 
   // Real device GPS — no seeded/default coordinate. Starts null; the mount effect below (and,
   // while online, the continuous watcher) are the only things that ever set a real fix.
@@ -459,9 +451,16 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       }
       setTelemetryStatus('online');
       setAutoOfflineRemainingSeconds(null);
-    } catch (err) {
+    } catch (err: any) {
+      // 409: TMO has put this unit on its installed tracker, so the phone must stop sending.
+      // Refreshing the profile switches trackingMode, which stops the phone's GPS sender.
+      if (err?.status === 409) {
+        pendingPingRef.current = null;
+        refreshProfile();
+        return;
+      }
       if (__DEV__) {
-        console.warn('[telemetry] sendPing failed, queued for retry:', (err as Error)?.message || err);
+        console.warn('[telemetry] sendPing failed, queued for retry:', err?.message || err);
       }
       pendingPingRef.current = ping;
     }
@@ -1194,6 +1193,8 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     setIsOnlineState(online);
     setIsAvailableState(online);
     if (online) {
+      // Pick up any tracking-method change TMO made since login before tracking starts.
+      refreshProfile();
       lastSuccessfulTelemetryAtRef.current = Date.now();
       wasNoSignalRef.current = false;
       autoOfflineTimeoutReachedRef.current = false;
@@ -1363,20 +1364,6 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
 
   /** Saves the tracking source on the server; reverts and rethrows on failure so the caller
    * never reports a save that didn't happen. */
-  const updateTrackingMode = async (mode: 'mobile_app' | 'iot_device', iotId?: string) => {
-    const previousMode = trackingMode;
-    const previousIotId = iotDeviceId;
-    setTrackingMode(mode);
-    if (iotId) setIotDeviceId(iotId);
-    try {
-      await driverApi.setTrackingMode(mode, iotId);
-    } catch (err) {
-      setTrackingMode(previousMode);
-      setIotDeviceId(previousIotId);
-      throw err;
-    }
-  };
-
   return (
     <DriverShiftContext.Provider
       value={{
@@ -1388,7 +1375,6 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         setIsAvailable,
         trackingMode,
         iotDeviceId,
-        updateTrackingMode,
         currentLat,
         currentLng,
         isLocatingDriver,

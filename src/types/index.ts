@@ -277,8 +277,6 @@ export interface RideHistoryItem {
  * backend returned, never typed in. The sign-in email is the one ON FILE for that person (the
  * code is sent there), so nothing personal is collected here at all. */
 export interface PendingAccountInfo {
-  trackingMode: 'mobile_app' | 'iot_device';
-  iotDeviceId?: string;
   personType: 'owner' | 'driver';
   /** Masked email on file the verification code goes to (display only). */
   emailMasked: string | null;

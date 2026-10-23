@@ -11,10 +11,9 @@ import {
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverAuth } from '../context/DriverAuthContext';
 import { PendingAccountInfo } from '../types';
-import { CheckCircle2, ArrowLeft, Cpu, User, Calendar, Phone, MapPin, Mail } from 'lucide-react-native';
+import { CheckCircle2, ArrowLeft, User, Calendar, Phone, MapPin, Mail } from 'lucide-react-native';
 import AuthProgressSteps from '../components/AuthProgressSteps';
 import FloatingIconButton from '../components/FloatingIconButton';
-import FormField from '../components/FormField';
 import Button from '../components/Button';
 
 interface DriverRegistrationScreenProps {
@@ -50,25 +49,12 @@ export default function DriverRegistrationScreen({ onBack, onNext, onSignIn, ini
   const [personType, setPersonType] = useState<'owner' | 'driver' | null>(
     initialValues?.personType ?? (people.length === 1 ? people[0].type : null)
   );
-  const [trackingMode, setTrackingMode] = useState<'mobile_app' | 'iot_device'>(
-    initialValues?.trackingMode ?? 'mobile_app'
-  );
-  const [iotDeviceId, setIotDeviceId] = useState(initialValues?.iotDeviceId ?? '');
-  const [errors, setErrors] = useState<{ personType?: string; iotDeviceId?: string }>({});
+  // No GPS tracking choice here: the tracking method is set by TMO at Final Confirmation.
+  const [errors, setErrors] = useState<{ personType?: string }>({});
 
   const selectedPerson = people.find((p) => p.type === personType);
   const hasAccount = !!selectedPerson?.has_account;
   const cannotReceiveCode = !!selectedPerson && !hasAccount && !selectedPerson.can_receive_code;
-
-  // Switching back to Mobile clears any typed device id so a stray value from a prior IoT
-  // selection can never linger in state and get accidentally submitted.
-  const handleSelectTrackingMode = (mode: 'mobile_app' | 'iot_device') => {
-    setTrackingMode(mode);
-    if (mode === 'mobile_app') {
-      setIotDeviceId('');
-      if (errors.iotDeviceId) setErrors((e) => ({ ...e, iotDeviceId: undefined }));
-    }
-  };
 
   const handleSelectPerson = (type: 'owner' | 'driver') => {
     setPersonType(type);
@@ -96,18 +82,9 @@ export default function DriverRegistrationScreen({ onBack, onNext, onSignIn, ini
     }
     if (cannotReceiveCode) return;
 
-    const nextErrors: typeof errors = {};
-    if (trackingMode === 'iot_device' && !iotDeviceId.trim()) {
-      nextErrors.iotDeviceId = 'Enter the IoT hardware device ID.';
-    }
-    setErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
-
     onNext({
       personType,
       emailMasked: selectedPerson?.email_masked ?? null,
-      trackingMode,
-      iotDeviceId: trackingMode === 'iot_device' ? iotDeviceId.trim() : undefined,
     });
   };
 
@@ -244,50 +221,6 @@ export default function DriverRegistrationScreen({ onBack, onNext, onSignIn, ini
               </Text>
             )}
           </View>
-        )}
-
-        {!hasAccount && (
-          <>
-        <Text style={styles.label}>GPS Telematics Tracking Method</Text>
-        <View style={styles.trackingOptionsRow}>
-          <TouchableOpacity
-            style={[styles.trackingOption, trackingMode === 'mobile_app' && styles.trackingOptionActive]}
-            onPress={() => handleSelectTrackingMode('mobile_app')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.radioCircle, trackingMode === 'mobile_app' && styles.radioCircleActive]}>
-              {trackingMode === 'mobile_app' && <View style={styles.radioDot} />}
-            </View>
-            <Text style={styles.trackingOptionText}>Mobile</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.trackingOption, trackingMode === 'iot_device' && styles.trackingOptionActive]}
-            onPress={() => handleSelectTrackingMode('iot_device')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.radioCircle, trackingMode === 'iot_device' && styles.radioCircleActive]}>
-              {trackingMode === 'iot_device' && <View style={styles.radioDot} />}
-            </View>
-            <Text style={styles.trackingOptionText}>IoT Hardware</Text>
-          </TouchableOpacity>
-        </View>
-
-        {trackingMode === 'iot_device' && (
-          <FormField
-            label="IoT Hardware Device ID"
-            icon={Cpu}
-            placeholder="e.g. TRV-GPS-1234"
-            value={iotDeviceId}
-            onChangeText={(v) => {
-              setIotDeviceId(v);
-              if (errors.iotDeviceId) setErrors((e) => ({ ...e, iotDeviceId: undefined }));
-            }}
-            autoCapitalize="characters"
-            error={errors.iotDeviceId}
-          />
-        )}
-          </>
         )}
 
         <Button
@@ -467,26 +400,6 @@ const styles = StyleSheet.create({
   submitBtn: {
     marginTop: SPACING.xl,
   },
-  trackingOptionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  trackingOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.surfaceInput,
-  },
-  trackingOptionActive: {
-    borderColor: COLORS.primary,
-    backgroundColor: COLORS.primaryTint,
-  },
   radioCircle: {
     width: 18,
     height: 18,
@@ -504,10 +417,5 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: COLORS.primary,
-  },
-  trackingOptionText: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.textPrimary,
-    fontWeight: '700',
   },
 });

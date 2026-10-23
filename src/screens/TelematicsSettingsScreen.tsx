@@ -1,155 +1,73 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-} from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS, RADIUS, SHADOWS, SPACING, FONT_FAMILY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
-import { Cpu, Smartphone, Radio, ShieldCheck, Check } from 'lucide-react-native';
+import { Cpu, Smartphone, Radio, ShieldCheck, Lock } from 'lucide-react-native';
 import ScreenHeader from '../components/ScreenHeader';
 import StatusBadge from '../components/StatusBadge';
-import Button from '../components/Button';
 
 interface TelematicsSettingsScreenProps {
   onBack: () => void;
 }
 
+// Read-only: the tracking method (phone GPS vs the installed tracker) is set by TMO at Final
+// Confirmation or on Tricycle Details. Drivers can see it here but can no longer change it.
 export default function TelematicsSettingsScreen({ onBack }: TelematicsSettingsScreenProps) {
   // Pushed page with the tab bar hidden: the last item must clear the phone's navigation bar.
   const insets = useSafeAreaInsets();
-  const {
-    trackingMode,
-    iotDeviceId,
-    updateTrackingMode,
-    currentLat,
-    currentLng,
-    headingDeg,
-  } = useDriverShift();
-
-  // Selecting a card only stages a choice — it no longer saves instantly. The card's border
-  // reflects this pending selection; the "ACTIVE" badge stays on whichever source is actually
-  // saved (trackingMode) until Save is pressed, so the two states can't be confused.
-  const [selectedMode, setSelectedMode] = useState<'mobile_app' | 'iot_device'>(trackingMode);
-  const [inputIotId, setInputIotId] = useState<string>(iotDeviceId);
-  const [justSaved, setJustSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
-    };
-  }, []);
-
-  const hasChanges =
-    selectedMode !== trackingMode || (selectedMode === 'iot_device' && inputIotId.trim() !== iotDeviceId);
-
-  // "Saved" is only shown once the server has actually stored the new source.
-  const handleSave = async () => {
-    if (saving) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      await updateTrackingMode(selectedMode, inputIotId.trim());
-      setJustSaved(true);
-      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
-      savedTimeoutRef.current = setTimeout(() => setJustSaved(false), 2500);
-    } catch (err: any) {
-      setSaveError(err?.message || 'Could not save the tracking source. Please check your connection and try again.');
-    } finally {
-      setSaving(false);
-    }
-  };
+  const { trackingMode, iotDeviceId, currentLat, currentLng, headingDeg } = useDriverShift();
+  const isIot = trackingMode === 'iot_device';
 
   return (
     <View style={styles.container}>
       <ScreenHeader title="Tracking Settings" onBack={onBack} />
 
       <ScrollView contentContainerStyle={[styles.content, { paddingBottom: 40 + insets.bottom }]}>
-        <Text style={styles.sectionLabel}>SELECT ACTIVE TELEMETRY SOURCE</Text>
+        <Text style={styles.sectionLabel}>ACTIVE TELEMETRY SOURCE</Text>
 
-        {/* Mode 1: Mobile Phone GPS — tapping only stages the choice; it no longer saves. */}
-        <TouchableOpacity
-          style={[styles.card, selectedMode === 'mobile_app' && styles.cardSelected]}
-          onPress={() => setSelectedMode('mobile_app')}
-          activeOpacity={0.8}
-        >
+        <View style={[styles.card, !isIot && styles.cardSelected]}>
           <View style={styles.iconBox}>
-            <Smartphone size={22} color={selectedMode === 'mobile_app' ? COLORS.primary : COLORS.textMuted} />
+            <Smartphone size={22} color={!isIot ? COLORS.primary : COLORS.textMuted} />
           </View>
           <View style={styles.infoCol}>
             <View style={styles.titleRow}>
               <Text style={styles.modeName}>Smartphone Mobile GPS</Text>
-              {trackingMode === 'mobile_app' && <StatusBadge label="ACTIVE" tone="success" size="sm" />}
+              {!isIot && <StatusBadge label="ACTIVE" tone="success" size="sm" />}
             </View>
             <Text style={styles.modeDesc}>
-              Streams real-time coordinates and speed pings from your smartphone's background GPS receiver.
+              Streams real-time coordinates and speed pings from your smartphone's GPS while you are Online.
             </Text>
           </View>
-        </TouchableOpacity>
+        </View>
 
-        {/* Mode 2: IoT Tracker Hardware */}
-        <TouchableOpacity
-          style={[styles.card, selectedMode === 'iot_device' && styles.cardSelected]}
-          onPress={() => setSelectedMode('iot_device')}
-          activeOpacity={0.8}
-        >
+        <View style={[styles.card, isIot && styles.cardSelected]}>
           <View style={styles.iconBox}>
-            <Cpu size={22} color={selectedMode === 'iot_device' ? COLORS.primary : COLORS.textMuted} />
+            <Cpu size={22} color={isIot ? COLORS.primary : COLORS.textMuted} />
           </View>
           <View style={styles.infoCol}>
             <View style={styles.titleRow}>
               <Text style={styles.modeName}>Onboard IoT Tracker Hardware</Text>
-              {trackingMode === 'iot_device' && <StatusBadge label="ACTIVE" tone="success" size="sm" />}
+              {isIot && <StatusBadge label="ACTIVE" tone="success" size="sm" />}
             </View>
             <Text style={styles.modeDesc}>
-              Receives telemetry directly from the municipal-certified GPS tracker installed on your tricycle unit.
+              {isIot && iotDeviceId
+                ? `Tracker #${iotDeviceId} installed on your tricycle sends its position directly to the municipal portal.`
+                : 'Receives telemetry directly from the municipal-certified GPS tracker installed on your tricycle unit.'}
             </Text>
           </View>
-        </TouchableOpacity>
+        </View>
 
-        {/* IoT Serial Form — only relevant once IoT hardware is the staged selection */}
-        {selectedMode === 'iot_device' && (
-          <View style={styles.formCard}>
-            <Text style={styles.formTitle}>IOT TRACKER SERIAL ID</Text>
-            <Text style={styles.formDesc}>
-              Enter the device ID etched on your tricycle's onboard GPS unit:
-            </Text>
-
-            <TextInput
-              style={styles.input}
-              value={inputIotId}
-              onChangeText={setInputIotId}
-              placeholder="Enter serial printed on the device label"
-              placeholderTextColor={COLORS.textMuted}
-            />
+        <View style={styles.formCard}>
+          <View style={styles.lockRow}>
+            <Lock size={14} color={COLORS.primary} />
+            <Text style={styles.formTitle}>SET BY THE TMO OFFICE</Text>
           </View>
-        )}
-
-        {/* One explicit save action for whichever source is staged above — replaces the old
-            instant-save-on-tap and the mismatched "Save IoT Configuration" button that could
-            save the wrong mode. */}
-        <Button
-          label={justSaved ? 'Saved' : 'Save Tracking Source'}
-          icon={justSaved ? Check : undefined}
-          onPress={handleSave}
-          loading={saving}
-          disabled={(!hasChanges && !justSaved) || saving}
-        />
-        {saveError && <Text style={styles.saveError}>{saveError}</Text>}
-        {justSaved && (
-          <Text style={styles.savedHint}>
-            {selectedMode === 'iot_device'
-              ? `Tricycle telemetry connected to IoT Hardware Tracker (${inputIotId.trim()}).`
-              : 'Tricycle telemetry is now powered by Smartphone GPS.'}
+          <Text style={styles.formDesc}>
+            Your tracking source is assigned by the Traffic Management Office. To install, replace or remove a GPS
+            tracker, visit the TMO office.
           </Text>
-        )}
+        </View>
 
         {/* Diagnostics */}
         <View style={styles.diagCard}>
@@ -194,20 +112,6 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     gap: SPACING.md,
     paddingBottom: 40,
-  },
-  savedHint: {
-    fontFamily: FONT_FAMILY,
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.success,
-    textAlign: 'center',
-  },
-  saveError: {
-    fontFamily: FONT_FAMILY,
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.dangerDark,
-    textAlign: 'center',
   },
   sectionLabel: {
     fontFamily: FONT_FAMILY,
@@ -271,6 +175,11 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
     ...SHADOWS.sm,
   },
+  lockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   formTitle: {
     fontFamily: FONT_FAMILY,
     fontSize: 11,
@@ -282,18 +191,6 @@ const styles = StyleSheet.create({
     fontFamily: FONT_FAMILY,
     fontSize: 11,
     color: COLORS.textSecondary,
-  },
-  input: {
-    fontFamily: FONT_FAMILY,
-    backgroundColor: COLORS.surfaceInput,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 10,
-    borderRadius: RADIUS.md,
-    fontSize: 13,
-    color: COLORS.textPrimary,
-    fontWeight: '700',
-    borderWidth: 1,
-    borderColor: COLORS.border,
   },
   diagCard: {
     backgroundColor: COLORS.primaryTint,

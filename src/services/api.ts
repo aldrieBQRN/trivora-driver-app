@@ -370,13 +370,6 @@ export const driverApi = {
   // Removed: the legacy /driver/location endpoint (BookingController::updateDriverLocation) was
   // deleted — sendTelematics covers current_lat/current_lng in the same request as the GPS ping.
 
-  setTrackingMode: async (mode: string, iotDeviceId: string | null = null) => {
-    return request('/driver/telemetry-mode', {
-      method: 'POST',
-      body: JSON.stringify({ mode, iot_device_id: iotDeviceId }),
-    });
-  },
-
   getViolations: async () => {
     return request('/driver/violations');
   },
