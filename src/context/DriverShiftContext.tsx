@@ -531,8 +531,11 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   const transmitterRef = useRef<GpsTransmitter>('foreground');
   const setTransmitter = (next: GpsTransmitter) => {
     if (Platform.OS === 'web') return;
-    if (transmitterRef.current === next) return;
     transmitterRef.current = next;
+    // Always persisted, even when the ref already matches: the ref starts as 'foreground' on
+    // every launch while storage may still hold 'background' from a session that was swiped away
+    // while backgrounded — skipping the write left the background task sending beside the
+    // foreground tick (two records ~2s apart per fix).
     AsyncStorage.setItem(GPS_TRANSMITTER_STORAGE_KEY, next).catch(() => {});
   };
 
