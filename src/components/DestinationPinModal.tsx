@@ -15,6 +15,8 @@ interface DestinationPinModalProps {
   onClose: () => void;
   onConfirm: (destination: SelectedDestination) => void;
   initialDestination?: SelectedDestination | null;
+  /** A place chosen from the search list: shown with its route first, selected only on Confirm. */
+  preview?: boolean;
 }
 
 /**
@@ -27,7 +29,7 @@ interface DestinationPinModalProps {
 
 /** Used only when the address lookup fails, so the driver still sees a readable label. */
 const FALLBACK_PLACE = { name: 'Pinned location', address: 'Nasugbu, Batangas' };
-export default function DestinationPinModal({ visible, onClose, onConfirm, initialDestination }: DestinationPinModalProps) {
+export default function DestinationPinModal({ visible, onClose, onConfirm, initialDestination, preview = false }: DestinationPinModalProps) {
   const insets = useSafeAreaInsets();
   const { currentLat, currentLng, headingDeg, isOnline } = useDriverShift();
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
@@ -177,10 +179,12 @@ export default function DestinationPinModal({ visible, onClose, onConfirm, initi
           onLayout={(e: LayoutChangeEvent) => setHeaderHeight(e.nativeEvent.layout.height)}
         >
           <View style={styles.flex}>
-            <Text style={styles.title}>Pin the destination</Text>
+            <Text style={styles.title}>{preview ? 'Check the destination' : 'Pin the destination'}</Text>
             <View style={styles.hintRow}>
               <Hand size={13} color={COLORS.textSecondary} />
-              <Text style={styles.hint}>Tap the map to place the destination pin</Text>
+              <Text style={styles.hint}>
+                {preview ? 'Check the route, or tap the map to move the pin' : 'Tap the map to place the destination pin'}
+              </Text>
             </View>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close map">
@@ -207,7 +211,8 @@ export default function DestinationPinModal({ visible, onClose, onConfirm, initi
               {pin ? (
                 <>
                   <Text style={styles.destName} numberOfLines={2}>
-                    {isResolving ? 'Finding the address…' : place?.name || FALLBACK_PLACE.name}
+                    {/* A chosen place keeps its name while only its route is loading. */}
+                    {isResolving && !place ? 'Finding the address…' : place?.name || FALLBACK_PLACE.name}
                   </Text>
                   {/* Address only when it adds something to the name, as in the Passenger app. */}
                   {place?.address && place.address !== place.name && !isResolving ? (

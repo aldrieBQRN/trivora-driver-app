@@ -30,6 +30,8 @@ import { useToast } from '../components/Toast';
 import { driverApi } from '../services/api';
 import { prefetchDriverQrCode } from './DriverQrCodeScreen';
 import { DriverGcashQrStatus } from '../types';
+import { TMO_CONTACT, ABOUT_TRIVORA, APP_VERSION } from '../constants/supportInfo';
+import { callPhoneNumber } from '../utils/deviceContact';
 
 interface DriverProfileScreenProps {
   onOpenTrackingSettings: () => void;
@@ -37,14 +39,9 @@ interface DriverProfileScreenProps {
   onOpenGcashSettings: () => void;
 }
 
-// Help Center / About Trivora have no structured contact fields anywhere in the app (no
-// driver-specific hotline/email exists), so their expandable panel shows this one real
-// sentence as plain text rather than inventing label/value rows to match Driver
-// Information's shape.
-const STATIC_MENU_COPY: Record<string, string> = {
-  help: 'For assistance, contact the Nasugbu TMO or the Nasugbu BPLO.',
-  about: 'Trivora is the official municipal tricycle dispatch platform of Nasugbu, Batangas.',
-};
+// Help Center: who handles what, after the TMO's contact rows (constants/supportInfo).
+const HELP_NOTE =
+  'Franchise, inspection and coding questions go to the TMO. Your sticker and franchise number are released by the BPLO at the Municipal Hall. Franchise fees are paid in person at the Municipal Treasurer\'s cashier: Trivora never asks for or collects payment.';
 
 type ExpandableSection = 'info' | 'vehicle' | 'help' | 'about' | null;
 
@@ -241,24 +238,36 @@ export default function DriverProfileScreen({
       <MenuRow
         icon={HelpCircle}
         label="Help Center"
+        subtitle={`TMO · ${TMO_CONTACT.hotline}`}
         expanded={expanded === 'help'}
         onPress={() => toggleSection('help')}
       />
       {expanded === 'help' && (
         <View style={styles.detailPanel}>
-          <Text style={styles.paragraph}>{STATIC_MENU_COPY.help}</Text>
+          <DetailRow label="Office" value={TMO_CONTACT.office} />
+          <DetailRow label="Address" value={TMO_CONTACT.address} />
+          <DetailRow label="Hotline" value={TMO_CONTACT.hotline} onPress={() => callPhoneNumber(TMO_CONTACT.hotline)} />
+          <DetailRow label="Email" value={TMO_CONTACT.email} />
+          <DetailRow label="Office hours" value={TMO_CONTACT.officeHours} />
+          <DetailRow label="Inspections" value={TMO_CONTACT.inspectionHours} />
+          <DetailRow label="Closed" value={TMO_CONTACT.closed} last />
+          <Text style={styles.paragraph}>{HELP_NOTE}</Text>
         </View>
       )}
 
       <MenuRow
         icon={Info}
         label="About Trivora"
+        subtitle={`Version ${APP_VERSION}`}
         expanded={expanded === 'about'}
         onPress={() => toggleSection('about')}
       />
       {expanded === 'about' && (
         <View style={styles.detailPanel}>
-          <Text style={styles.paragraph}>{STATIC_MENU_COPY.about}</Text>
+          <DetailRow label="App" value="Trivora Driver" />
+          <DetailRow label="Version" value={APP_VERSION} />
+          <DetailRow label="Run by" value="Traffic Management Office, Municipality of Nasugbu" last />
+          <Text style={styles.paragraph}>{ABOUT_TRIVORA}</Text>
         </View>
       )}
 
@@ -313,11 +322,18 @@ function MenuRow({ icon: Icon, label, subtitle, expanded, onPress }: MenuRowProp
   );
 }
 
-function DetailRow({ label, value, last }: { label: string; value: string; last?: boolean }) {
+/** `onPress` makes the value a link (e.g. tap to call); long values wrap. */
+function DetailRow({ label, value, last, onPress }: { label: string; value: string; last?: boolean; onPress?: () => void }) {
   return (
     <View style={[detailStyles.row, last && detailStyles.rowLast]}>
       <Text style={detailStyles.label}>{label}</Text>
-      <Text style={detailStyles.value} numberOfLines={1}>{value}</Text>
+      {onPress ? (
+        <TouchableOpacity onPress={onPress} accessibilityRole="button" accessibilityLabel={`Call ${value}`}>
+          <Text style={[detailStyles.value, detailStyles.link]} numberOfLines={3}>{value}</Text>
+        </TouchableOpacity>
+      ) : (
+        <Text style={detailStyles.value} numberOfLines={3}>{value}</Text>
+      )}
     </View>
   );
 }
@@ -345,6 +361,10 @@ const detailStyles = StyleSheet.create({
     color: COLORS.textPrimary,
     flexShrink: 1,
     textAlign: 'right',
+  },
+  link: {
+    color: COLORS.primary,
+    textDecorationLine: 'underline',
   },
 });
 

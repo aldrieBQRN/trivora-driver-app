@@ -459,10 +459,16 @@ export const driverApi = {
   },
 
   /** Adds the walk-in passenger to the tricycle's one open ride session (created if none). Retry-safe per quote. */
-  manualRideAdd: async (quote: string, passengerName: string, paymentMethod?: string): Promise<{ message: string; booking: ManualRide; ride: QrSession }> => {
+  manualRideAdd: async (quote: string, passengerName: string, paymentMethod?: string, passengerContact?: string, pickupName?: string): Promise<{ message: string; booking: ManualRide; ride: QrSession }> => {
     return request('/driver/manual-ride/add', {
       method: 'POST',
-      body: JSON.stringify({ quote, passenger_name: passengerName, payment_method: paymentMethod || 'cash' }),
+      body: JSON.stringify({
+        quote,
+        passenger_name: passengerName || null,
+        passenger_contact: passengerContact || null,
+        pickup_name: pickupName || null,
+        payment_method: paymentMethod || 'cash',
+      }),
     });
   },
 
@@ -619,8 +625,10 @@ export function mapBookingRecordToHistoryItem(raw: any) {
   return {
     id: raw.id,
     bookingCode: raw.booking_code,
-    // A Manual Ride has no passenger account — shown as an anonymous walk-in, never a made-up name.
-    passengerName: raw.booking_type === 'manual' ? 'Walk-in passenger' : passengerUser.name || 'Passenger',
+    // A Manual Ride has no passenger account: the name the driver recorded, if the walk-in gave one.
+    passengerName: raw.booking_type === 'manual' ? raw.walk_in_name || 'Walk-in passenger' : passengerUser.name || 'Passenger',
+    // The number a walk-in chose to give (Manual Ride only), for something left behind.
+    passengerContact: raw.booking_type === 'manual' ? raw.walk_in_contact || null : null,
     passengerAvatarUrl: passengerUser.profile_photo_url || undefined,
     pickup: raw.pickup_name,
     dropoff: raw.dropoff_name,

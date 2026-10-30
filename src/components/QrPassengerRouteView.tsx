@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, SignalLow } from 'lucide-react-native';
+import { MapPin, SignalLow, Banknote, Smartphone } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { useDriverShift } from '../context/DriverShiftContext';
 import { useLiveRoute } from '../hooks/useLiveRoute';
@@ -50,6 +50,9 @@ export default function QrPassengerRouteView({ passenger, label, onBack, onDropO
     return driverLocation ? haversineKm(driverLocation, dest) : null;
   }, [route, driverLocation?.lat, driverLocation?.lng, dest.lat, dest.lng]);
   const etaMin = remainingKm != null ? Math.max(1, Math.round((remainingKm / TOWN_SPEED_KMH) * 60)) : null;
+  // How this passenger will pay, so the driver knows before drop-off.
+  const isGcash = passenger.payment_method === 'gcash';
+  const PayIcon = isGcash ? Smartphone : Banknote;
 
   return (
     <View style={styles.container}>
@@ -85,6 +88,10 @@ export default function QrPassengerRouteView({ passenger, label, onBack, onDropO
           <View style={styles.flex}>
             <Text style={styles.label}>Destination</Text>
             <Text style={styles.dest} numberOfLines={2}>{dest.name}</Text>
+          </View>
+          <View style={styles.payPill} accessibilityLabel={`Pays by ${isGcash ? 'GCash' : 'cash'}`}>
+            <PayIcon size={14} color={COLORS.primary} />
+            <Text style={styles.payText}>{isGcash ? 'GCash' : 'Cash'}</Text>
           </View>
         </View>
 
@@ -138,6 +145,12 @@ const styles = StyleSheet.create({
   destRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   label: { ...TYPOGRAPHY.label, color: COLORS.textMuted },
   dest: { ...TYPOGRAPHY.bodyLarge, color: COLORS.textPrimary, marginTop: 2 },
+  payPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: RADIUS.full, backgroundColor: COLORS.primaryTint,
+  },
+  payText: { ...TYPOGRAPHY.caption, fontWeight: '700', color: COLORS.primary },
   statsRow: { flexDirection: 'row', alignItems: 'center', paddingTop: SPACING.md, borderTopWidth: 1, borderTopColor: COLORS.borderLight },
   stat: { flex: 1 },
   statEnd: { alignItems: 'flex-end' },

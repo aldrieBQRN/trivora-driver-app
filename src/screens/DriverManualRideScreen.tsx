@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, LayoutChangeEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapPin, CheckCircle2, ChevronRight, Minus, Plus, Satellite, SignalLow, AlertCircle, Banknote, Smartphone, User } from 'lucide-react-native';
+import { MapPin, CheckCircle2, ChevronRight, Minus, Plus, Satellite, SignalLow, AlertCircle, Banknote, Smartphone, User, Phone } from 'lucide-react-native';
 import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY, FONT_FAMILY } from '../constants/theme';
 import { useManualRide, toManualRideError, ManualRideError } from '../context/ManualRideContext';
 import { useQrSession } from '../context/QrSessionContext';
@@ -19,6 +19,7 @@ import DestinationPinModal from '../components/DestinationPinModal';
 import DriverPaymentModal, { PassengerPaymentTarget } from '../components/DriverPaymentModal';
 import { ManualRide, ManualRideQuote, DriverGcashQrStatus, PaymentMethod } from '../types';
 import { driverApi } from '../services/api';
+import { reverseGeocodePoint } from '../services/routingService';
 
 const peso = (n: number | null | undefined) => `₱${Number(n || 0).toFixed(2)}`;
 
@@ -48,8 +49,26 @@ function ManualRideSetup() {
   const { currentLat, currentLng, isLocatingDriver } = useDriverShift();
   const hasGps = currentLat != null && currentLng != null;
 
+  // The place name of the driver's position (the pick-up), looked up again only after moving about
+  // 50 m, so the lookup service isn't asked on every GPS tick. A label only: the server still takes
+  // the pick-up coordinates from the driver's GPS.
+  const [pickupPlace, setPickupPlace] = useState<string | null>(null);
+  const pickupKey = hasGps ? `${(currentLat as number).toFixed(4)},${(currentLng as number).toFixed(4)}` : null;
+  useEffect(() => {
+    if (!hasGps) return;
+    let cancelled = false;
+    reverseGeocodePoint({ lat: currentLat as number, lng: currentLng as number }).then((found) => {
+      if (!cancelled && found?.name) setPickupPlace(found.name.slice(0, 255));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickupKey]);
+
   const [destination, setDestination] = useState<SelectedDestination | null>(null);
   const [passengerName, setPassengerName] = useState('');
+  const [passengerContact, setPassengerContact] = useState('');
   const [partySize, setPartySize] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [driverGcash, setDriverGcash] = useState<DriverGcashQrStatus | null>(null);
@@ -58,6 +77,8 @@ function ManualRideSetup() {
   const [gcashChecked, setGcashChecked] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showPin, setShowPin] = useState(false);
+  // A place tapped in the search list, shown on the map with its route until the driver confirms it.
+  const [previewDest, setPreviewDest] = useState<SelectedDestination | null>(null);
   const [quote, setQuote] = useState<ManualRideQuote | null>(null);
   const [isQuoting, setIsQuoting] = useState(false);
   const [quoteError, setQuoteError] = useState<ManualRideError | null>(null);
@@ -175,15 +196,17 @@ function ManualRideSetup() {
   // Unknown capacity never means "unlimited": the server refuses Manual Rides for a tricycle whose
   // capacity isn't configured, so the count stays at 1 until a capacity is known.
   const canIncrease = maxParty != null && partySize < maxParty;
-  const hasName = passengerName.trim().length > 0;
+  // Name and contact number are both optional (the walk-in may decline); a number, once typed, must
+  // be a full mobile number so the driver can actually reach them about something left behind.
+  const contactValid = passengerContact === '' || /^09\d{9}$/.test(passengerContact);
 
   const handleAdd = async () => {
-    if (!quote || !quoteFresh || !hasName || isAdding || !!busy) return;
+    if (!quote || !quoteFresh || !contactValid || isAdding || !!busy) return;
     setIsAdding(true);
     setAddError(null);
     try {
       // On a dropped connection the same quote is simply sent again — the server adds it once.
-      await add(quote.quote, passengerName.trim(), paymentMethod);
+      await add(quote.quote, passengerName.trim(), paymentMethod, passengerContact, pickupPlace ?? undefined);
     } catch (err: any) {
       if (err?.message === 'busy') return;
       const error = toManualRideError(err, "Couldn't add the passenger.");
@@ -214,8 +237,8 @@ function ManualRideSetup() {
         <View style={styles.tripRow}>
           <View style={styles.markerCol}><View style={styles.pickupDot} /></View>
           <View style={styles.flex}>
-            <Text style={styles.caption}>Pick-up</Text>
-            <Text style={styles.value}>Your current location</Text>
+            <Text style={styles.caption}>Pick-up · Current location</Text>
+            <Text style={styles.value} numberOfLines={2}>{pickupPlace ?? 'Your current location'}</Text>
             <View style={styles.gpsLine}>
               {hasGps ? <Satellite size={12} color={COLORS.success} /> : <SignalLow size={12} color={COLORS.warning} />}
               <Text style={[styles.gpsText, hasGps ? styles.gpsOk : styles.gpsWait]}>
@@ -271,16 +294,27 @@ function ManualRideSetup() {
           </View>
         </View>
 
-        {/* The walk-in has no app account, so the driver records their name for the ride session. */}
+        {/* The walk-in has no app account. Both are optional: ask, and leave blank if they decline.
+            The number is kept on this trip only, to reach them about something left behind. */}
         <View style={styles.nameField}>
           <FormField
-            label="Passenger name"
+            label="Passenger name (optional)"
             icon={User}
             value={passengerName}
             onChangeText={setPassengerName}
             placeholder="e.g. Juan Dela Cruz"
             autoCapitalize="words"
           />
+          <FormField
+            label="Contact number (optional)"
+            icon={Phone}
+            value={passengerContact}
+            onChangeText={(v) => setPassengerContact(v.replace(/\D/g, '').slice(0, 11))}
+            placeholder="e.g. 09171234567"
+            keyboardType="number-pad"
+            error={contactValid ? undefined : 'Enter an 11-digit mobile number starting with 09, or leave it blank.'}
+          />
+          <Text style={styles.hint}>For reaching the passenger if they leave something behind.</Text>
         </View>
 
         {/* Payment Method */}
@@ -392,7 +426,7 @@ function ManualRideSetup() {
             label="Add Passenger"
             onPress={handleAdd}
             loading={busy === 'add' || isAdding}
-            disabled={!quoteFresh || !hasName || isQuoting || !!busy || isAdding}
+            disabled={!quoteFresh || !contactValid || isQuoting || !!busy || isAdding}
             fullWidth={false}
             style={styles.footerBtn}
           />
@@ -405,15 +439,18 @@ function ManualRideSetup() {
       <DestinationSearchModal
         visible={showSearch}
         onClose={() => setShowSearch(false)}
-        onSelect={(d) => { setDestination(d); setShowSearch(false); }}
+        onSelect={(d) => setPreviewDest(d)}
         onPinOnMap={() => setShowPin(true)}
       />
 
+      {/* Pin on map, or check a place chosen from the list (its route first; Confirm selects it).
+          Closing a preview returns to the search list. */}
       <DestinationPinModal
-        visible={showPin}
-        onClose={() => setShowPin(false)}
-        initialDestination={destination}
-        onConfirm={(d) => { setDestination(d); setShowPin(false); setShowSearch(false); }}
+        visible={showPin || !!previewDest}
+        onClose={() => { setShowPin(false); setPreviewDest(null); }}
+        initialDestination={previewDest ?? destination}
+        preview={!!previewDest}
+        onConfirm={(d) => { setDestination(d); setShowPin(false); setPreviewDest(null); setShowSearch(false); }}
       />
     </View>
   );

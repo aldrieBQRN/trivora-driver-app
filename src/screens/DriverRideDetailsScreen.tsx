@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { RideHistoryItem } from '../types';
-import { Star, MessageSquareQuote, CheckCircle2, Clock, Banknote, Smartphone } from 'lucide-react-native';
+import { Star, MessageSquareQuote, CheckCircle2, Clock, Banknote, Smartphone, Phone } from 'lucide-react-native';
+import { callPhoneNumber } from '../utils/deviceContact';
 import ScreenHeader from '../components/ScreenHeader';
 import StatusBadge from '../components/StatusBadge';
 import Avatar from '../components/Avatar';
@@ -92,7 +93,21 @@ export default function DriverRideDetailsScreen({ item, onBack }: DriverRideDeta
             <View style={styles.passengerCol}>
               <Text style={styles.passengerName}>{item.passengerName}</Text>
               {item.isManual ? (
-                <Text style={styles.notRatedText}>Manual ride · no app account</Text>
+                <>
+                  <Text style={styles.notRatedText}>Manual ride · no app account</Text>
+                  {/* The number the walk-in chose to give: to reach them about something left behind. */}
+                  {!!item.passengerContact && (
+                    <TouchableOpacity
+                      style={styles.contactRow}
+                      onPress={() => callPhoneNumber(item.passengerContact)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Call ${item.passengerContact}`}
+                    >
+                      <Phone size={13} color={COLORS.primary} />
+                      <Text style={styles.contactText}>{item.passengerContact} · Call</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
               ) : isCompleted ? (
                 item.rating ? (
                   <View style={styles.ratingRow}>
@@ -292,6 +307,17 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textMuted,
     marginTop: 2,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
+  contactText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.primary,
+    fontWeight: '600',
   },
   commentBox: {
     flexDirection: 'row',

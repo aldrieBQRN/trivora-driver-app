@@ -78,7 +78,8 @@ export default function RideHistoryScreen() {
           // Completed but the driver hasn't confirmed payment yet (no earnings credited).
           const isUnpaid = isCompleted && !!item.paymentStatus && item.paymentStatus !== 'paid';
           const source = item.isManual ? 'Manual Ride' : item.isWalkIn ? 'Scan to Ride' : null;
-          const meta = [source, item.passengerName, item.time].filter(Boolean).join(' · ');
+          // A walk-in's name and contact number appear when they gave them (Manual Ride).
+          const meta = [source, item.passengerName, item.passengerContact, item.time].filter(Boolean).join(' · ');
           return (
             <TouchableOpacity
               style={styles.row}

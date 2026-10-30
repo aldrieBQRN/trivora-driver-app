@@ -63,7 +63,6 @@ export interface DriverQrCodeData {
   status: 'ready' | 'capacity_required' | 'not_ready';
   status_label: string;
   note: string;
-  print_url?: string;
 }
 
 export interface DriverProfile {
@@ -236,6 +235,8 @@ export interface RideHistoryItem {
   id: number | string;
   bookingCode: string;
   passengerName: string;
+  /** Manual Ride only: the contact number the walk-in chose to give, if any. */
+  passengerContact?: string | null;
   passengerAvatarUrl?: string | null;
   pickup: string;
   dropoff: string;
@@ -379,6 +380,8 @@ export interface QrSessionPassenger {
   /** 'qr' = joined with the Passenger app; 'walk_in' = added by the driver (Manual Ride, no account). */
   source?: 'qr' | 'walk_in';
   passenger_name?: string | null;
+  /** Walk-in only: the contact number they chose to give, if any. */
+  passenger_contact?: string | null;
 }
 
 export interface QrSession {
@@ -422,8 +425,10 @@ export interface ManualRideQuote {
 export interface ManualRide {
   booking_code: string;
   status: 'accepted' | 'in_transit' | 'completed' | 'cancelled';
-  /** The walk-in passenger's recorded name (no app account). */
+  /** The walk-in passenger's recorded name (no app account), if they gave one. */
   passenger_name?: string | null;
+  /** The walk-in's contact number, if they gave one. */
+  passenger_contact?: string | null;
   party_size: number;
   pickup: { name: string; lat: number; lng: number };
   dropoff: { name: string; lat: number; lng: number };

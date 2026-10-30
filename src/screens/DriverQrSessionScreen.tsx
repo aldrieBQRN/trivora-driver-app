@@ -246,6 +246,7 @@ export default function DriverQrSessionScreen({ onBack }: DriverQrSessionScreenP
                     <Text style={styles.rowMeta}>
                       <Text style={styles.sourceText}>{sourceLabel(p)}</Text>
                       {' · '}{p.party_size} {p.party_size === 1 ? 'seat' : 'seats'} · {Number(p.distance_km).toFixed(1)} km
+                      {' · '}{p.payment_method === 'gcash' ? 'GCash' : 'Cash'}
                       {isDone && timeLabel(p.completed_at) ? ` · dropped off ${timeLabel(p.completed_at)}` : ''}
                     </Text>
                   </View>
