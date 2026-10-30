@@ -63,6 +63,12 @@ const TRANSMIT_SLOT_TOLERANCE_MS = 500;
 // worth of gap is the threshold, so the visible gap after resuming is bounded to roughly the
 // actual time spent backgrounded, not "backgrounded time + up to another interval."
 const BACKGROUND_CATCHUP_THRESHOLD_MS = GPS_TRANSMISSION_INTERVAL_MS;
+// Unsent readings kept across a mobile-data drop (about 8 minutes at the 5s cadence). With the
+// reading being sent, this fills the batch endpoint's limit of 100 per request.
+const MAX_PENDING_PINGS = 99;
+// When a fresh fix is slow, the phone's last fix is sent instead if it is at most this old, with
+// the time it was really taken. Older than this, nothing is sent: it would not be a live position.
+const RECENT_FIX_MAX_AGE_MS = 10000;
 
 interface PendingPing {
   latitude: number;
@@ -241,11 +247,11 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   const [headingDeg, setHeadingDeg] = useState<number>(0);
   const { isLocating: isLocatingDriver, error: locationError, requestCurrentLocation } = useCurrentLocation();
 
-  // A bounded 1-slot buffer, not an unbounded offline queue: if a send fails, the single most
-  // recent unsent reading is kept here (overwriting any earlier one — never accumulated) and is
-  // flushed alongside the next successful reading via the batch endpoint. This trades "a full
-  // offline trail" for simplicity, deliberately — see the GPS/IoT tracking plan.
-  const pendingPingRef = useRef<PendingPing | null>(null);
+  // Readings whose send failed, newest last, flushed with the next reading via the batch endpoint.
+  // Bounded to MAX_PENDING_PINGS: a long outage drops the oldest, never grows without limit.
+  const pendingPingsRef = useRef<PendingPing[]>([]);
+  // The time of the last fix sent, so a slow tick never resends the same cached fix.
+  const lastSentFixAtRef = useRef(0);
   // When the app last transitioned to background/inactive — used by the AppState effect below to
   // decide whether a resume needs an immediate catch-up ping.
   const wentBackgroundAtRef = useRef<number | null>(null);
@@ -429,20 +435,20 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   };
 
   // Single send path used by the scheduled 15s watcher tick, the position-watch fallback and the
-  // AppState catch-up ping below — all of which must win claimTransmitSlot() first. If a previous
-  // send failed and is still pending, flushes it alongside this reading via
-  // the batch endpoint (so no reading is silently lost to a single dropped network blip); on
-  // success either way, clears the pending slot. On failure, this reading becomes the new (and
-  // only) pending one — never accumulated.
+  // AppState catch-up ping below — all of which must win claimTransmitSlot() first. Readings still
+  // pending from failed sends go with this one through the batch endpoint, so a mobile-data drop
+  // delays them instead of losing them. The queue is taken out before the request: a send can
+  // take up to 15s, so the next tick must not send (or later overwrite) the same readings.
   const sendPing = async (ping: PendingPing) => {
-    const pending = pendingPingRef.current;
+    const reading = { ...ping, heading_deg: Math.round(ping.heading_deg) };
+    const queued = pendingPingsRef.current;
+    pendingPingsRef.current = [];
     try {
-      if (pending) {
-        await driverApi.sendTelematicsBatch([pending, ping]);
+      if (queued.length) {
+        await driverApi.sendTelematicsBatch([...queued, reading]);
       } else {
-        await driverApi.sendTelematics(ping);
+        await driverApi.sendTelematics(reading);
       }
-      pendingPingRef.current = null;
 
       lastSuccessfulTelemetryAtRef.current = Date.now();
       if (wasNoSignalRef.current) {
@@ -455,14 +461,19 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
       // 409: TMO has put this unit on its installed tracker, so the phone must stop sending.
       // Refreshing the profile switches trackingMode, which stops the phone's GPS sender.
       if (err?.status === 409) {
-        pendingPingRef.current = null;
         refreshProfile();
+        return;
+      }
+      // 422: the server refused these readings. Retrying can never succeed, and keeping them
+      // would make every later batch fail with them.
+      if (err?.status === 422) {
+        if (__DEV__) console.warn('[telemetry] readings refused by the server, dropped:', err?.message || err);
         return;
       }
       if (__DEV__) {
         console.warn('[telemetry] sendPing failed, queued for retry:', err?.message || err);
       }
-      pendingPingRef.current = ping;
+      pendingPingsRef.current = [...queued, reading, ...pendingPingsRef.current].slice(-MAX_PENDING_PINGS);
     }
   };
 
@@ -752,12 +763,20 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         }
 
         const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
-        const position = await Promise.race([
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+        const fresh = await Promise.race([
+          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }).catch(() => null),
           timeoutPromise,
         ]);
 
-        if (cancelled || !position || !('coords' in position)) {
+        // A slow fresh fix must not cost this reading: a fix from the last few seconds is still
+        // the tricycle's position, sent with the time it was really taken.
+        const recentFix =
+          lastKnown && Date.now() - lastKnown.timestamp <= RECENT_FIX_MAX_AGE_MS && lastKnown.timestamp > lastSentFixAtRef.current
+            ? lastKnown
+            : null;
+        const position = fresh ?? recentFix;
+
+        if (cancelled || !position) {
           // No fix to send — hand the slot back so the position watch can still cover this window.
           releaseSlot();
           return;
@@ -766,12 +785,13 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
         if (slot) {
           // Transmission (not UI refresh): the one scheduled GPS send. The claim already
           // guarantees this record is at least 15 seconds after the previous one.
+          lastSentFixAtRef.current = position.timestamp;
           sendPing({
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             speed_kmh: nextSpeedKmh ?? speedKmh,
             heading_deg: nextHeading ?? headingDeg,
-            recorded_at: new Date().toISOString(),
+            recorded_at: new Date(position.timestamp).toISOString(),
           });
         }
       } catch {

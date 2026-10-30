@@ -358,8 +358,7 @@ export const driverApi = {
   },
 
   // Flushes up to 100 pings queued while offline in one request (DriverTelematicsController::
-  // batchStore). Used by the shift watcher's single-slot pending-ping buffer to catch up after a
-  // dropped send, not for a general offline queue.
+  // batchStore). Used by the shift watcher and the background task to catch up after failed sends.
   sendTelematicsBatch: async (pings: any[]) => {
     return request('/driver/telematics/batch', {
       method: 'POST',

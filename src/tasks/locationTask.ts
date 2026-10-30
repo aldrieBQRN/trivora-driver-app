@@ -25,7 +25,7 @@ import { getDriverTokenForBackground, DRIVER_SESSION_STORAGE_KEY } from '../serv
  * authToken that api.ts's module scope holds (a headless relaunch after the OS kills the app
  * starts that module state fresh at null). Everything the task needs (auth token, whether mobile
  * GPS tracking is even the active mode, which side currently owns transmission, and the 15s send
- * cadence / 1-slot pending-ping resilience DriverShiftContext already uses in the foreground) is
+ * cadence / pending-ping resilience DriverShiftContext already uses in the foreground) is
  * instead read from/written to AsyncStorage, so the task is fully self-contained.
  *
  * Exactly ONE sender may write a record for a given 15s window. Two things enforce that here:
@@ -83,6 +83,9 @@ export const GPS_TRANSMITTER_STORAGE_KEY = '@trivora_gps_transmitter';
 // fixed project-wide 5s GPS transmission interval) — not imported directly to keep this task
 // file free of any dependency on the React context module.
 const SEND_INTERVAL_MS = 5000;
+// Same limit as DriverShiftContext's MAX_PENDING_PINGS: unsent readings kept across a mobile-data
+// drop, which with the reading being sent fills the batch endpoint's limit of 100 per request.
+const MAX_PENDING_PINGS = 99;
 
 // How often the OS is asked to hand a fix to this task (the value DriverShiftContext passes as
 // `timeInterval` to startLocationUpdatesAsync). This is the SAMPLING rate, never the transmission
@@ -162,25 +165,31 @@ try {
       latitude,
       longitude,
       speed_kmh: nextSpeedKmh,
-      heading_deg: nextHeading,
+      heading_deg: Math.round(nextHeading),
       recorded_at: new Date(latest.timestamp).toISOString(),
     };
 
+    // An app updated mid-shift can still have the old single reading stored here.
     const pendingRaw = await AsyncStorage.getItem(PENDING_PING_STORAGE_KEY);
-    const pending = pendingRaw ? (JSON.parse(pendingRaw) as Ping) : null;
+    const stored = pendingRaw ? (JSON.parse(pendingRaw) as Ping | Ping[]) : [];
+    const pending = Array.isArray(stored) ? stored : [stored];
 
     try {
-      if (pending) {
-        await driverApi.sendTelematicsBatch([pending, ping]);
+      if (pending.length) {
+        await driverApi.sendTelematicsBatch([...pending, ping]);
       } else {
         await driverApi.sendTelematics(ping);
       }
       await AsyncStorage.removeItem(PENDING_PING_STORAGE_KEY);
       // The cadence stamp was already written above (at claim time) — nothing to update here.
     } catch (sendErr) {
-      // Same resilience contract as the foreground sendPing(): keep only the single most recent
-      // unsent reading, flush it alongside the next successful one via the batch endpoint.
-      await AsyncStorage.setItem(PENDING_PING_STORAGE_KEY, JSON.stringify(ping));
+      // Same resilience contract as the foreground sendPing(): readings the server refused (422)
+      // are dropped, since they can never succeed; any other failure keeps them for the next send.
+      if ((sendErr as { status?: number })?.status === 422) {
+        await AsyncStorage.removeItem(PENDING_PING_STORAGE_KEY);
+      } else {
+        await AsyncStorage.setItem(PENDING_PING_STORAGE_KEY, JSON.stringify([...pending, ping].slice(-MAX_PENDING_PINGS)));
+      }
       if (__DEV__) {
         console.warn('[telemetry:bg] send failed, queued for retry:', (sendErr as Error)?.message || sendErr);
       }
