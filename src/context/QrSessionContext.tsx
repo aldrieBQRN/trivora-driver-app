@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { driverApi } from '../services/api';
+import { listenOnPrivateChannel } from '../services/realtime';
 import { useDriverAuth } from './DriverAuthContext';
 import { useDriverShift } from './DriverShiftContext';
 import { useToast } from '../components/Toast';
@@ -17,6 +18,8 @@ import { QrSession } from '../types';
 
 /** Same cadence as the existing pending-request poll (DriverShiftContext PENDING_REQUEST_POLL_MS). */
 const QR_SESSION_POLL_MS = 5000;
+/** While Reverb is live, a passenger joining or leaving arrives as a signal; this is the safety net. */
+const QR_SESSION_SAFETY_POLL_MS = 15000;
 
 interface QrSessionContextType {
   session: QrSession | null;
@@ -106,8 +109,22 @@ export function QrSessionProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     refresh();
-    const interval = setInterval(refresh, QR_SESSION_POLL_MS);
-    return () => clearInterval(interval);
+    let lastRefreshAt = Date.now();
+    const refreshNow = () => {
+      lastRefreshAt = Date.now();
+      refresh();
+    };
+    const signals = listenOnPrivateChannel(`driver.${driver.id}`, (event) => {
+      if (event === null || event === 'qr.changed') refreshNow();
+    });
+    const interval = setInterval(() => {
+      if (signals.isLive() && Date.now() - lastRefreshAt < QR_SESSION_SAFETY_POLL_MS) return;
+      refreshNow();
+    }, QR_SESSION_POLL_MS);
+    return () => {
+      signals.stop();
+      clearInterval(interval);
+    };
   }, [isAuthenticated, driver?.id, isOnline, hasSession, refresh]);
 
   const run = useCallback(async (key: string, action: () => Promise<{ ride: QrSession | null }>, fallback: string) => {

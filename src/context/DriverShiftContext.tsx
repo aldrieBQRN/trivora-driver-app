@@ -35,12 +35,17 @@ import {
   GpsTransmitter,
 } from '../tasks/locationTask';
 import { dismissStaleBookingRequests } from '../services/pushNotifications';
+import { listenOnPrivateChannel } from '../services/realtime';
 
 const ACTIVE_RIDE_STATUSES = ['accepted', 'arrived', 'in_transit'] as const;
 // Background DATA refresh cadence — pending dispatch and ride history are live server state the
 // driver is waiting on, so they refresh on the project-wide 5-second standard. Read-only GETs:
 // they never transmit GPS and never touch the transmission cadence below.
 const PENDING_REQUEST_POLL_MS = 5000;
+// While Reverb is live, changes arrive as signals, so the pending-request, history and violation
+// checks only run at this pace as a safety net. A dropped socket puts them straight back on their
+// 5-second cadence.
+const SAFETY_POLL_MS = 15000;
 // History doesn't need to be near-real-time, just eventually consistent without requiring an
 // app restart — a passenger's rating can land any time after their ride completes.
 const HISTORY_REFRESH_POLL_MS = 5000;
@@ -421,14 +426,33 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     setCurrentLng(coords.lng);
   };
 
+  // Tracker mode: the position the installed tracker last sent to the server (GET /driver/status).
+  // Returns false when the tracker has not reported a position yet.
+  const applyTrackerPosition = (status: any): boolean => {
+    if (typeof status?.current_lat !== 'number' || typeof status?.current_lng !== 'number') return false;
+    setCurrentLat(status.current_lat);
+    setCurrentLng(status.current_lng);
+    return true;
+  };
+
   // Real GPS, obtained the moment the driver is known — independent of online status, so Home
   // shows the driver's actual position even before they go online (see LocationPendingView for
-  // what renders while this is in flight or if it fails).
+  // what renders while this is in flight or if it fails). In tracker mode the unit's position is
+  // the tracker's, so the phone's GPS is used only if the tracker has never reported one.
   useEffect(() => {
     if (!driver) return;
+    if (trackingMode === 'iot_device') {
+      driverApi
+        .getOnlineStatus()
+        .then((status) => {
+          if (!applyTrackerPosition(status)) return requestCurrentLocation().then(applyLocationFix);
+        })
+        .catch(() => requestCurrentLocation().then(applyLocationFix));
+      return;
+    }
     requestCurrentLocation().then(applyLocationFix);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driver?.id]);
+  }, [driver?.id, trackingMode]);
 
   const retryLocation = () => {
     requestCurrentLocation().then(applyLocationFix);
@@ -699,6 +723,32 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     // before the driver has even logged in. Runs while Online or while carrying out an active
     // trip (shouldTrackGps).
     if (!shouldTrackGps || !driver) return;
+
+    // Installed-tracker mode: the tracker, not this phone, reports the unit's position. Show the
+    // position it last sent to the server, and follow its signal for No Signal / auto-Offline,
+    // instead of the phone's own GPS (which TMO never sees in this mode).
+    if (trackingMode === 'iot_device') {
+      let stopped = false;
+      const pollTracker = async () => {
+        try {
+          const status = await driverApi.getOnlineStatus();
+          if (stopped) return;
+          if (typeof status?.seconds_since_last_location === 'number') {
+            lastSuccessfulTelemetryAtRef.current = Date.now() - status.seconds_since_last_location * 1000;
+          }
+          applyTrackerPosition(status);
+        } catch {
+          // A failed read leaves the last position; the next tick tries again.
+        }
+      };
+      pollTracker();
+      const trackerTimer = setInterval(pollTracker, GPS_TRANSMISSION_INTERVAL_MS);
+      return () => {
+        stopped = true;
+        clearInterval(trackerTimer);
+      };
+    }
+
     let cancelled = false;
     let activePollTimer: ReturnType<typeof setInterval> | null = null;
     let bgEventSubscription: { remove: () => void } | null = null;
@@ -1029,8 +1079,10 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!driver) return;
     let cancelled = false;
+    let lastFetchAt = 0;
 
     const fetchHistory = async () => {
+      lastFetchAt = Date.now();
       try {
         const res = await driverApi.getHistory(driver.id);
         if (cancelled) return;
@@ -1041,9 +1093,16 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     };
 
     fetchHistory();
-    const interval = setInterval(fetchHistory, HISTORY_REFRESH_POLL_MS);
+    const signals = listenOnPrivateChannel(`driver.${driver.id}`, (event) => {
+      if (event === null || event === 'rides.changed') fetchHistory();
+    });
+    const interval = setInterval(() => {
+      if (signals.isLive() && Date.now() - lastFetchAt < SAFETY_POLL_MS) return;
+      fetchHistory();
+    }, HISTORY_REFRESH_POLL_MS);
     return () => {
       cancelled = true;
+      signals.stop();
       clearInterval(interval);
     };
   }, [driver?.id]);
@@ -1068,6 +1127,7 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!driver) return;
     let cancelled = false;
+    let lastRunAt = 0;
     // Re-enter the loading state for this driver's own first fetch — relevant if a different
     // driver logs in without the app fully remounting, so their view doesn't briefly show the
     // previous driver's already-settled loading/error state.
@@ -1076,13 +1136,21 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
 
     const run = async () => {
       if (cancelled) return;
+      lastRunAt = Date.now();
       await refreshViolations();
     };
 
     run();
-    const interval = setInterval(run, HISTORY_REFRESH_POLL_MS);
+    const signals = listenOnPrivateChannel(`driver.${driver.id}`, (event) => {
+      if (event === null || event === 'violations.changed') run();
+    });
+    const interval = setInterval(() => {
+      if (signals.isLive() && Date.now() - lastRunAt < SAFETY_POLL_MS) return;
+      run();
+    }, HISTORY_REFRESH_POLL_MS);
     return () => {
       cancelled = true;
+      signals.stop();
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1123,8 +1191,10 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
+    let lastPollAt = 0;
 
     const poll = async () => {
+      lastPollAt = Date.now();
       try {
         const res = await driverApi.getPendingRequests(driver.id);
         if (cancelled) return;
@@ -1158,11 +1228,18 @@ export function DriverShiftProvider({ children }: { children: ReactNode }) {
 
     pollPendingRequestsRef.current = poll;
     poll();
-    const interval = setInterval(poll, PENDING_REQUEST_POLL_MS);
+    const signals = listenOnPrivateChannel(`driver.${driver.id}`, (event) => {
+      if (event === null || event === 'offers.changed') poll();
+    });
+    const interval = setInterval(() => {
+      if (signals.isLive() && Date.now() - lastPollAt < SAFETY_POLL_MS) return;
+      poll();
+    }, PENDING_REQUEST_POLL_MS);
 
     return () => {
       cancelled = true;
       pollPendingRequestsRef.current = async () => {};
+      signals.stop();
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
