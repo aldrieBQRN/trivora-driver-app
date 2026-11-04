@@ -247,6 +247,27 @@ export async function searchPlaces(query: string, opts?: { timeoutMs?: number; l
 const NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
 
 /**
+ * Barangay, and "Street, Barangay, Nasugbu, Batangas", from a Nominatim address. In Nasugbu's map
+ * data the poblacion barangays are `neighbourhood` areas ("Barangay 4") inside larger `quarter`
+ * areas (Talangan, Bucana, Wawa), and the other barangays are `village` areas, so the most
+ * specific of these is the barangay.
+ */
+function nasugbuAddress(a: any): { barangay?: string; address: string } {
+  const named = (s?: string) => !!s && /^(barangay|brgy\.?)\s*\S/i.test(s);
+  const raw: string | undefined =
+    (named(a?.neighbourhood) ? a.neighbourhood : undefined) || a?.village || a?.quarter || a?.suburb || a?.city_district;
+  let barangay: string | undefined;
+  if (raw) {
+    const num = raw.match(/^(?:barangay|brgy\.?)\s*(\d+)$/i);
+    barangay = num ? `Barangay ${num[1]}` : named(raw) ? raw : `Barangay ${raw}`;
+  }
+  const street = a?.road ? `${a.house_number ? a.house_number + ' ' : ''}${a.road}` : undefined;
+  const town = a?.town || a?.city || a?.municipality || 'Nasugbu';
+  const address = [street, barangay, town, a?.state || 'Batangas'].filter(Boolean).join(', ');
+  return { barangay, address };
+}
+
+/**
  * Readable name for a pinned point (the same Nominatim reverse lookup the Passenger app uses).
  * Resolves null on any failure — the caller shows a plain "Selected location", never an invented
  * address.
@@ -269,44 +290,8 @@ export async function reverseGeocodePoint(
     const data = await response.json();
     if (!data || data.error) return null;
 
-    const rawBarangay =
-      data.address?.quarter ||
-      data.address?.suburb ||
-      data.address?.village ||
-      data.address?.neighbourhood ||
-      data.address?.city_district;
-
-    let barangay: string | undefined;
-    if (rawBarangay) {
-      const lower = rawBarangay.toLowerCase();
-      if (lower.includes('bucana')) {
-        barangay = 'Barangay Bucana';
-      } else {
-        const numMatch = rawBarangay.match(/(?:barangay|brgy\.?)\s*(\d+)/i) || rawBarangay.match(/\b([1-9]|10)\b/);
-        if (numMatch) {
-          barangay = `Barangay ${numMatch[1]}`;
-        } else {
-          barangay = rawBarangay.startsWith('Barangay') || rawBarangay.startsWith('Brgy')
-            ? rawBarangay
-            : `Barangay ${rawBarangay}`;
-        }
-      }
-    }
-
     const road = data.address?.road;
-    const houseNumber = data.address?.house_number;
-    let cleanAddress = '';
-    if (road) {
-      cleanAddress = `${houseNumber ? houseNumber + ' ' : ''}${road}, ${barangay || 'Nasugbu'}, Batangas`;
-    } else if (data.display_name) {
-      cleanAddress = data.display_name
-        .split(',')
-        .slice(0, 3)
-        .map((s: string) => s.trim())
-        .join(', ');
-    } else {
-      cleanAddress = `${barangay || 'Nasugbu'}, Batangas`;
-    }
+    const { barangay, address: cleanAddress } = nasugbuAddress(data.address);
 
     const name = data.name || road || barangay || cleanAddress.split(',')[0];
     return { name: name || cleanAddress, address: cleanAddress };
